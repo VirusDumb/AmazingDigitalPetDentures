@@ -1,1 +1,9 @@
-gradio==6.16.0
+# ---- Runtime deps — these install on the HF Space. Latest versions (unpinned). ----
+# gradio is the ONE exception: it must match README's sdk_version (what the Space runs).
+# To upgrade gradio, bump it here AND in README.md together.
+gradio==6.16.0     # UI framework — pinned to the Space sdk_version
+agno               # agent framework; LlamaCpp model = OpenAILike (any OpenAI-compatible endpoint)
+openai             # transport used by agno's OpenAILike (our Modal / llama.cpp server)
+huggingface_hub    # model/dataset access + Space OAuth (used later for persistence)
+python-dotenv      # load LLAMACPP_BASE_URL / LLAMACPP_API_KEY from a local .env during dev
+sqlalchemy         # backend for agno's SqliteDb (session history + user memory)

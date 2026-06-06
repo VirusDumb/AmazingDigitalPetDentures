@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import html
+import uuid
 from pathlib import Path
-from typing import Any
 
 import gradio as gr
 
 
-APP_TITLE = "Amazing Digital Pet Dentures"
+APP_TITLE = "Amazing Digital Pet Adventures"
 ADVENTURES_DIR = Path("adventures")
+APP_CSS = ""
 
 
 SAMPLE_ADVENTURES: dict[str, str] = {
@@ -23,9 +24,7 @@ SAMPLE_ADVENTURES: dict[str, str] = {
     body {
       margin: 0;
       min-height: 100vh;
-      background:
-        radial-gradient(circle at 20% 15%, rgba(255,255,255,.95), transparent 18rem),
-        linear-gradient(135deg, #ff4f8b 0%, #ffde59 35%, #4bd9ff 70%, #8affb2 100%);
+      background: #fff4d6;
       display: grid;
       place-items: center;
       color: #17324d;
@@ -33,11 +32,10 @@ SAMPLE_ADVENTURES: dict[str, str] = {
     main {
       width: min(880px, calc(100vw - 32px));
       padding: 28px;
-      border: 2px solid rgba(255,255,255,.72);
+      border: 4px solid #17324d;
       border-radius: 8px;
-      background: rgba(255,255,255,.42);
-      box-shadow: 0 24px 80px rgba(18, 45, 82, .26), inset 0 1px 0 rgba(255,255,255,.75);
-      backdrop-filter: blur(18px) saturate(1.5);
+      background: #ffffff;
+      box-shadow: 10px 10px 0 #ff4f8b;
     }
     h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: 0; }
     p { max-width: 62ch; font-size: 1.05rem; line-height: 1.5; }
@@ -59,7 +57,7 @@ SAMPLE_ADVENTURES: dict[str, str] = {
 <body>
   <main>
     <h1>Morning Circus Cleanup</h1>
-    <p>The ringmaster dentures demand three tiny wins before noon. Click each act as it leaves the tent.</p>
+    <p>The ringmaster has three tiny wins waiting before noon. Click each act as it leaves the tent.</p>
     <section class="track" aria-label="Adventure checklist">
       <label><input type="checkbox" /> Sweep one visible surface for five minutes</label>
       <label><input type="checkbox" /> Drink water like a professional acrobat</label>
@@ -189,110 +187,256 @@ def reload_adventures() -> tuple[gr.Dropdown, str]:
     return gr.Dropdown(choices=choices, value=selected), load_adventure(selected)
 
 
-def optional_agent_reply(message: str, history: list[dict[str, str]]) -> str | None:
-    try:
-        from agents import respond  # type: ignore
-    except Exception:
+def latest_adventure() -> str | None:
+    """Name of the most recently created/modified adventure, or None if there are none."""
+    ensure_adventures()
+    files = list(ADVENTURES_DIR.glob("*.html"))
+    if not files:
         return None
+    return max(files, key=lambda p: p.stat().st_mtime).name
 
-    reply = respond(message=message, history=history)
-    return str(reply) if reply is not None else None
+
+def open_adventure() -> tuple[dict, dict, gr.Dropdown, str]:
+    """Open the adventure window on the latest adventure (the 'continue' button)."""
+    choices = adventure_choices()
+    selected = latest_adventure()
+    if selected not in choices:
+        selected = choices[0] if choices else None
+    return (
+        gr.update(visible=True),   # adventure_col
+        gr.update(visible=False),  # open_btn
+        gr.Dropdown(choices=choices, value=selected),
+        load_adventure(selected),  # falls back to empty_adventure_html() when None
+    )
+
+
+def close_adventure() -> tuple[dict, dict]:
+    """Close the adventure window and bring back the 'continue' button."""
+    return gr.update(visible=False), gr.update(visible=True)
+
+
+def _response_text(response: object) -> str:
+    """Pull the assistant text out of an Agno run response."""
+    content = getattr(response, "content", response)
+    return str(content) if content is not None else ""
+
+
+def optional_agent_turn(
+    message: str, selected_adventure: str | None, user_id: str
+) -> tuple[str, str | None]:
+    try:
+        from agents import adventure_agent  # type: ignore
+    except Exception:
+        return local_reply(message), None
+
+    # Snapshot the folder so we can spot an adventure the Adventure Engineer just wrote.
+    before = set(ADVENTURES_DIR.glob("*.html"))
+    try:
+        # Stable per-browser user_id/session_id → continuous history + memory for this user.
+        response = adventure_agent.run(message, user_id=user_id, session_id=user_id)
+    except Exception as exc:  # keep the Gradio handler alive; surface the error in chat
+        import sys
+        import traceback
+
+        traceback.print_exc(file=sys.stderr)
+        return f"The agent team hit a snag: {exc}", None
+
+    reply = _response_text(response)
+    new_files = sorted(set(ADVENTURES_DIR.glob("*.html")) - before, key=lambda p: p.stat().st_mtime)
+    adventure_path = str(new_files[-1]) if new_files else None
+    return reply, adventure_path
 
 
 def local_reply(message: str) -> str:
     clean = message.strip()
     if not clean:
-        return "Clack once if you need a task turned into an adventure."
+        return "Tell the quest booth what you need turned into an adventure."
 
     return (
-        "I am the temporary front desk for the denture circus. "
+        "I am the temporary quest booth for the circus. "
         "The real agent team will plug in through `agents.py` later. "
         f"For now, I heard: {clean!r}. Pick a faux adventure from the dropdown and inspect the live HTML stage."
     )
 
 
+def ensure_user_id(user_id: str | None) -> str:
+    """A stable id for this browser; generate one on first use (persisted via BrowserState)."""
+    return user_id or f"u-{uuid.uuid4().hex[:12]}"
+
+
 def chat_turn(
     message: str,
     history: list[dict[str, str]] | None,
-) -> tuple[str, list[dict[str, str]]]:
+    selected_adventure: str | None,
+    user_id: str | None,
+) -> tuple[str, list[dict[str, str]], gr.Dropdown, str, dict, dict, str]:
+    user_id = ensure_user_id(user_id)
     next_history = list(history or [])
     if message.strip():
         next_history.append({"role": "user", "content": message})
-    reply = optional_agent_reply(message, next_history) or local_reply(message)
+    reply, adventure_path = optional_agent_turn(message, selected_adventure, user_id)
     next_history.append({"role": "assistant", "content": reply})
-    return "", next_history
+
+    choices = adventure_choices()
+    next_selection = selected_adventure
+    if adventure_path:
+        next_selection = Path(adventure_path).name
+        if next_selection not in choices:
+            choices = adventure_choices()
+
+    if next_selection not in choices:
+        next_selection = choices[0] if choices else None
+
+    # Auto-open the adventure window only when a NEW adventure was just generated;
+    # otherwise leave the open/closed state exactly as the user left it.
+    if adventure_path:
+        col_update = gr.update(visible=True)
+        open_btn_update = gr.update(visible=False)
+    else:
+        col_update = gr.update()
+        open_btn_update = gr.update()
+
+    return (
+        "",
+        next_history,
+        gr.Dropdown(choices=choices, value=next_selection),
+        load_adventure(next_selection),
+        col_update,
+        open_btn_update,
+        user_id,
+    )
 
 
 def build_app() -> gr.Blocks:
+    global APP_CSS
+
     ensure_adventures()
     choices = adventure_choices()
     initial_adventure = choices[0] if choices else None
 
-    css = """
+    APP_CSS = """
     :root {
-      --adpd-ink: #14304b;
-      --adpd-pink: #ff4f8b;
-      --adpd-blue: #4bd9ff;
-      --adpd-yellow: #ffde59;
-      --adpd-glass: rgba(255, 255, 255, .52);
+      --adpd-ink: #171717;
+      --adpd-paper: #fff8df;
+      --adpd-red: #ff4b4b;
+      --adpd-blue: #42b7ff;
+      --adpd-yellow: #ffd84d;
+      --adpd-green: #70e06a;
+      --adpd-purple: #bd7bff;
     }
     .gradio-container {
       min-height: 100vh;
       background:
-        radial-gradient(circle at 12% 10%, rgba(255,255,255,.9), transparent 18rem),
-        radial-gradient(circle at 78% 8%, rgba(75,217,255,.42), transparent 18rem),
-        linear-gradient(135deg, #ffe3ef 0%, #dff7ff 38%, #fff0a8 68%, #e6ffe9 100%);
+        linear-gradient(45deg, rgba(23,23,23,.06) 25%, transparent 25%) 0 0 / 28px 28px,
+        linear-gradient(-45deg, rgba(23,23,23,.06) 25%, transparent 25%) 0 0 / 28px 28px,
+        var(--adpd-paper);
       color: var(--adpd-ink);
     }
     #adpd-shell {
       max-width: 1440px;
       margin: 0 auto;
+      padding: 18px;
     }
-    #adpd-title h1 {
-      font-size: clamp(2rem, 4vw, 4.4rem);
+    #adpd-title {
+      border: 4px solid var(--adpd-ink);
+      border-radius: 8px;
+      background: var(--adpd-yellow);
+      box-shadow: 8px 8px 0 var(--adpd-ink);
+      padding: 18px 20px;
+      margin-bottom: 18px;
+    }
+    #adpd-title h1, #booth-title h2 {
+      font-size: clamp(2.2rem, 5vw, 5.2rem);
       line-height: 1;
       margin-bottom: .35rem;
       letter-spacing: 0;
+      color: var(--adpd-ink);
     }
     #adpd-title p {
-      font-size: 1.05rem;
+      font-size: 1.1rem;
       max-width: 820px;
-      color: #33516d;
+      color: var(--adpd-ink);
+      font-weight: 700;
     }
-    #mascot-panel, #chat-panel, #adventure-panel {
-      border: 1px solid rgba(255, 255, 255, .72);
+    #booth-panel, #chat-panel, #adventure-panel {
+      border: 4px solid var(--adpd-ink);
       border-radius: 8px;
-      background: var(--adpd-glass);
-      box-shadow: 0 24px 80px rgba(37, 67, 96, .18), inset 0 1px 0 rgba(255,255,255,.76);
-      backdrop-filter: blur(18px) saturate(1.45);
+      background: white;
+      box-shadow: 8px 8px 0 var(--adpd-ink);
     }
-    #mascot-panel {
-      padding: 18px;
-      min-height: 240px;
-      display: grid;
-      place-items: center;
+    #booth-panel {
+      padding: 18px 18px 14px;
+      min-height: 150px;
+      background:
+        linear-gradient(90deg, var(--adpd-red) 0 16.66%, white 16.66% 33.33%, var(--adpd-blue) 33.33% 50%, white 50% 66.66%, var(--adpd-red) 66.66% 83.33%, white 83.33% 100%);
+      color: var(--adpd-ink);
+      display: flex;
+      align-items: end;
     }
     #chat-panel, #adventure-panel {
       padding: 14px;
     }
+    #chat-panel {
+      background: #fefefe;
+      margin-top: 18px;
+    }
     #adventure-panel {
       min-height: 680px;
+      background: var(--adpd-blue);
     }
     .adventure-frame {
       width: 100%;
       height: 660px;
-      border: 0;
+      border: 4px solid var(--adpd-ink);
       border-radius: 8px;
       background: white;
-      box-shadow: inset 0 0 0 1px rgba(20,48,75,.14);
+      box-shadow: 6px 6px 0 rgba(23,23,23,.35);
     }
-    #denture-svg {
-      width: min(100%, 280px);
-      height: auto;
-      filter: drop-shadow(0 18px 24px rgba(143, 38, 88, .22));
+    #booth-title {
+      width: 100%;
+      background: var(--adpd-yellow);
+      border: 4px solid var(--adpd-ink);
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 6px 6px 0 var(--adpd-ink);
+    }
+    #booth-title h2 {
+      font-size: clamp(1.5rem, 3vw, 2.8rem);
+      margin: 0;
+    }
+    #booth-title p {
+      margin: 8px 0 0;
+      font-weight: 800;
+      line-height: 1.35;
     }
     #chat-panel textarea {
       min-height: 58px !important;
+    }
+    button, select, input, textarea {
+      border-radius: 8px !important;
+    }
+    button {
+      border: 3px solid var(--adpd-ink) !important;
+      box-shadow: 4px 4px 0 var(--adpd-ink) !important;
+      font-weight: 900 !important;
+    }
+    /* Big glossy "continue your last adventure" call-to-action under the chat. */
+    #open-adventure-btn {
+      width: 100%;
+      margin-top: 16px;
+      min-height: 70px;
+      font-size: clamp(1.1rem, 2vw, 1.5rem) !important;
+      background: var(--adpd-green) !important;
+      box-shadow: 6px 6px 0 var(--adpd-ink) !important;
+    }
+    /* Adventure toolbar: dropdown + a compact close control. */
+    #adventure-toolbar {
+      align-items: end;
+      gap: 10px;
+    }
+    #close-adventure-btn {
+      background: var(--adpd-red) !important;
+      color: white !important;
     }
     @media (max-width: 900px) {
       #adventure-panel { min-height: 520px; }
@@ -300,94 +444,107 @@ def build_app() -> gr.Blocks:
     }
     """
 
-    with gr.Blocks(title=APP_TITLE, css=css) as demo:
+    with gr.Blocks(title=APP_TITLE) as demo:
         with gr.Column(elem_id="adpd-shell"):
             gr.Markdown(
-                "# Amazing Digital Pet Dentures\n"
+                "# Amazing Digital Pet Adventures\n"
                 "Turn chores, goals, and odd little obligations into playable HTML adventures.",
                 elem_id="adpd-title",
             )
             with gr.Row(equal_height=False):
-                with gr.Column(scale=4):
-                    with gr.Group(elem_id="mascot-panel"):
-                        gr.HTML(denture_svg())
+                # Chat is the persistent primary window. When the adventure column is
+                # hidden, this flex-grows to full width on its own (no scale juggling).
+                with gr.Column(scale=3, elem_id="chat-col"):
+                    with gr.Group(elem_id="booth-panel"):
+                        gr.Markdown(
+                            "## Quest Booth\n"
+                            "Bright circus tasks, big-top energy.",
+                            elem_id="booth-title",
+                        )
                     with gr.Group(elem_id="chat-panel"):
                         chatbot = gr.Chatbot(
                             value=[
                                 {
                                     "role": "assistant",
-                                    "content": "Welcome to the circus desk. The agents arrive later; the adventure window works now.",
+                                    "content": "Welcome to the quest booth. The agents arrive later; the adventure window works now.",
                                 }
                             ],
-                            label="Denture Chat",
-                            height=360,
+                            label="Quest Chat",
+                            height=520,
                         )
-                        message = gr.Textbox(
-                            label="Chat",
-                            placeholder="Tell the dentures what quest you need...",
-                            lines=2,
-                        )
-                        message.submit(
-                            chat_turn,
-                            inputs=[message, chatbot],
-                            outputs=[message, chatbot],
-                        )
-                with gr.Column(scale=8):
+                        with gr.Row(elem_id="chat-input-row"):
+                            message = gr.Textbox(
+                                placeholder="Tell the booth what quest you need...",
+                                lines=1,
+                                max_lines=6,
+                                autofocus=True,
+                                show_label=False,
+                                container=False,
+                                scale=8,
+                            )
+                            send_button = gr.Button(
+                                "Send", variant="primary", scale=1, min_width=110
+                            )
+                    open_btn = gr.Button(
+                        "👉 Click here to continue your last adventure",
+                        elem_id="open-adventure-btn",
+                        variant="primary",
+                    )
+                # The adventure window: hidden by default, opens side-by-side.
+                with gr.Column(scale=7, visible=False, elem_id="adventure-col") as adventure_col:
                     with gr.Group(elem_id="adventure-panel"):
-                        adventure_dropdown = gr.Dropdown(
-                            choices=choices,
-                            value=initial_adventure,
-                            label="Adventure model",
-                        )
+                        with gr.Row(elem_id="adventure-toolbar"):
+                            adventure_dropdown = gr.Dropdown(
+                                choices=choices,
+                                value=initial_adventure,
+                                label="Adventure model",
+                                scale=8,
+                            )
+                            close_btn = gr.Button(
+                                "✕ Close adventure",
+                                elem_id="close-adventure-btn",
+                                scale=1,
+                                min_width=140,
+                            )
                         refresh_button = gr.Button("Refresh adventures")
                         adventure_view = gr.HTML(load_adventure(initial_adventure))
-                        adventure_dropdown.change(
-                            load_adventure,
-                            inputs=adventure_dropdown,
-                            outputs=adventure_view,
-                        )
-                        refresh_button.click(
-                            reload_adventures,
-                            inputs=None,
-                            outputs=[adventure_dropdown, adventure_view],
-                        )
+
+            adventure_dropdown.change(
+                load_adventure,
+                inputs=adventure_dropdown,
+                outputs=adventure_view,
+            )
+            refresh_button.click(
+                reload_adventures,
+                inputs=None,
+                outputs=[adventure_dropdown, adventure_view],
+            )
+            open_btn.click(
+                open_adventure,
+                inputs=None,
+                outputs=[adventure_col, open_btn, adventure_dropdown, adventure_view],
+            )
+            close_btn.click(
+                close_adventure,
+                inputs=None,
+                outputs=[adventure_col, open_btn],
+            )
+            # Persisted in the browser's localStorage → stable per-browser user/session id
+            # across reloads, so each visitor keeps their own history + memory.
+            user_state = gr.BrowserState("", storage_key="adpd_user_id")
+
+            chat_io = dict(
+                fn=chat_turn,
+                inputs=[message, chatbot, adventure_dropdown, user_state],
+                outputs=[message, chatbot, adventure_dropdown, adventure_view, adventure_col, open_btn, user_state],
+            )
+            message.submit(**chat_io)
+            send_button.click(**chat_io)
     return demo
-
-
-def denture_svg() -> str:
-    return """
-<svg id="denture-svg" viewBox="0 0 420 300" role="img" aria-label="Smiling digital dentures mascot" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="gum" x1="0" x2="1">
-      <stop offset="0" stop-color="#ff7aad"/>
-      <stop offset="0.5" stop-color="#ff4f8b"/>
-      <stop offset="1" stop-color="#ff9bc3"/>
-    </linearGradient>
-    <linearGradient id="tooth" x1="0" x2="0" y1="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#dff7ff"/>
-    </linearGradient>
-  </defs>
-  <path d="M64 134 C72 52 344 52 356 134 C365 196 310 250 210 250 C110 250 55 196 64 134Z" fill="url(#gum)" stroke="#8d1443" stroke-width="8"/>
-  <path d="M96 142 C112 126 308 126 324 142 C320 205 278 230 210 230 C142 230 100 205 96 142Z" fill="#5e1730" opacity=".92"/>
-  <g>
-    <rect x="112" y="128" width="42" height="78" rx="12" fill="url(#tooth)" stroke="#b8d7e6" stroke-width="3"/>
-    <rect x="156" y="122" width="42" height="90" rx="12" fill="url(#tooth)" stroke="#b8d7e6" stroke-width="3"/>
-    <rect x="200" y="120" width="42" height="92" rx="12" fill="url(#tooth)" stroke="#b8d7e6" stroke-width="3"/>
-    <rect x="244" y="122" width="42" height="90" rx="12" fill="url(#tooth)" stroke="#b8d7e6" stroke-width="3"/>
-  </g>
-  <circle cx="165" cy="94" r="24" fill="#fff"/>
-  <circle cx="255" cy="94" r="24" fill="#fff"/>
-  <circle cx="171" cy="99" r="10" fill="#14304b"/>
-  <circle cx="249" cy="99" r="10" fill="#14304b"/>
-  <path d="M178 65 C190 48 230 48 242 65" fill="none" stroke="#8d1443" stroke-width="8" stroke-linecap="round"/>
-  <path d="M132 252 C172 279 248 279 288 252" fill="none" stroke="#4bd9ff" stroke-width="10" stroke-linecap="round"/>
-</svg>
-"""
 
 
 app = build_app()
 
 
 if __name__ == "__main__":
-    app.launch()
+    app.launch(css=APP_CSS)

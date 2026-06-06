@@ -7,6 +7,13 @@ CLAUDE.md
 .env
 .env.*
 *.env
+!.env.example      # keep the template tracked
+
+# ---- Local agno SQLite db (session history + user memory) ----
+adpd.db
+adpd.db-*
+*.sqlite
+*.sqlite3
 
 # ---- Python ----
 __pycache__/

@@ -1,0 +1,4 @@
+# ---- Dev / deploy-only deps — do NOT add these to the Space build. ----
+# Installs everything in requirements.txt PLUS the tools we only use locally.
+-r requirements.txt
+modal              # deploys the llama-server GPU backend; the Space only calls its URL over HTTP
