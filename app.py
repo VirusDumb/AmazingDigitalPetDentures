@@ -11,134 +11,18 @@ APP_TITLE = "Amazing Digital Pet Adventures"
 ADVENTURES_DIR = Path("adventures")
 APP_CSS = ""
 
-
-SAMPLE_ADVENTURES: dict[str, str] = {
-    "morning-circus-cleanup.html": """<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Morning Circus Cleanup</title>
-  <style>
-    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background: #fff4d6;
-      display: grid;
-      place-items: center;
-      color: #17324d;
+# Shown when the chat first loads and whenever a new session is started.
+WELCOME_MESSAGE = [
+    {
+        "role": "assistant",
+        "content": "Hi! I'm the dentures 🦷 — tell me a vibe or an idea and I'll build you a playable game. Hit 🧹 New session anytime to start fresh.",
     }
-    main {
-      width: min(880px, calc(100vw - 32px));
-      padding: 28px;
-      border: 4px solid #17324d;
-      border-radius: 8px;
-      background: #ffffff;
-      box-shadow: 10px 10px 0 #ff4f8b;
-    }
-    h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: 0; }
-    p { max-width: 62ch; font-size: 1.05rem; line-height: 1.5; }
-    .track { display: grid; gap: 12px; margin-top: 22px; }
-    label {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      padding: 14px 16px;
-      border: 1px solid rgba(23, 50, 77, .18);
-      border-radius: 8px;
-      background: rgba(255,255,255,.58);
-      font-weight: 750;
-    }
-    input { width: 22px; height: 22px; accent-color: #ff2f73; }
-    .banner { margin-top: 20px; font-weight: 850; color: #8d1443; }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>Morning Circus Cleanup</h1>
-    <p>The ringmaster has three tiny wins waiting before noon. Click each act as it leaves the tent.</p>
-    <section class="track" aria-label="Adventure checklist">
-      <label><input type="checkbox" /> Sweep one visible surface for five minutes</label>
-      <label><input type="checkbox" /> Drink water like a professional acrobat</label>
-      <label><input type="checkbox" /> Put one wandering item back in its home</label>
-    </section>
-    <div class="banner">Bonus: say "ta-da" at least once. It counts.</div>
-  </main>
-</body>
-</html>
-""",
-    "deep-work-tightrope.html": """<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Deep Work Tightrope</title>
-  <style>
-    :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #eef8ff; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background:
-        linear-gradient(90deg, rgba(255,255,255,.22) 1px, transparent 1px) 0 0 / 44px 44px,
-        linear-gradient(180deg, #15335f 0%, #0b1020 100%);
-      display: grid;
-      place-items: center;
-    }
-    main { width: min(900px, calc(100vw - 28px)); }
-    h1 { margin: 0 0 14px; font-size: clamp(2.1rem, 6vw, 4.6rem); letter-spacing: 0; }
-    .rope {
-      height: 12px;
-      border-radius: 999px;
-      background: linear-gradient(90deg, #ffde59, #ff4f8b, #4bd9ff);
-      box-shadow: 0 0 28px rgba(75,217,255,.45);
-      margin: 26px 0;
-    }
-    .acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
-    button {
-      border: 1px solid rgba(255,255,255,.25);
-      border-radius: 8px;
-      padding: 18px;
-      min-height: 92px;
-      background: rgba(255,255,255,.1);
-      color: inherit;
-      font: inherit;
-      font-weight: 800;
-      cursor: pointer;
-      backdrop-filter: blur(12px);
-    }
-    button.done { background: rgba(138,255,178,.22); border-color: rgba(138,255,178,.7); }
-    p { color: #c8e2ff; line-height: 1.5; }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>Deep Work Tightrope</h1>
-    <p>Cross the rope in three careful blocks. Tap an act when it is complete.</p>
-    <div class="rope" aria-hidden="true"></div>
-    <section class="acts">
-      <button>25 min focus sprint</button>
-      <button>5 min stretch reset</button>
-      <button>25 min final pass</button>
-    </section>
-  </main>
-  <script>
-    document.querySelectorAll("button").forEach((button) => {
-      button.addEventListener("click", () => button.classList.toggle("done"));
-    });
-  </script>
-</body>
-</html>
-""",
-}
+]
 
 
 def ensure_adventures() -> None:
+    """Make sure the shared adventures/ folder exists (the agent writes games into it)."""
     ADVENTURES_DIR.mkdir(exist_ok=True)
-    for filename, contents in SAMPLE_ADVENTURES.items():
-        path = ADVENTURES_DIR / filename
-        if not path.exists():
-            path.write_text(contents, encoding="utf-8")
 
 
 def adventure_choices() -> list[str]:
@@ -162,7 +46,7 @@ def empty_adventure_html() -> str:
 <head><meta charset="utf-8" /><title>No Adventure</title></head>
 <body style="font-family: system-ui; padding: 2rem;">
   <h1>No adventures yet</h1>
-  <p>Generated HTML files will appear here later.</p>
+  <p>Ask the dentures to build you a game — it'll appear right here.</p>
 </body>
 </html>
 """
@@ -222,7 +106,7 @@ def _response_text(response: object) -> str:
 
 
 def optional_agent_turn(
-    message: str, selected_adventure: str | None, user_id: str
+    message: str, selected_adventure: str | None, user_id: str, session_id: str
 ) -> tuple[str, str | None]:
     try:
         from agents import adventure_agent  # type: ignore
@@ -232,14 +116,15 @@ def optional_agent_turn(
     # Snapshot the folder so we can spot an adventure the Adventure Engineer just wrote.
     before = set(ADVENTURES_DIR.glob("*.html"))
     try:
-        # Stable per-browser user_id/session_id → continuous history + memory for this user.
-        response = adventure_agent.run(message, user_id=user_id, session_id=user_id)
+        # Stable per-browser user_id; session_id is resettable via the "New session" button,
+        # so each session starts with clean history.
+        response = adventure_agent.run(message, user_id=user_id, session_id=session_id)
     except Exception as exc:  # keep the Gradio handler alive; surface the error in chat
         import sys
         import traceback
 
         traceback.print_exc(file=sys.stderr)
-        return f"The agent team hit a snag: {exc}", None
+        return f"The dentures hit a snag: {exc}", None
 
     reply = _response_text(response)
     new_files = sorted(set(ADVENTURES_DIR.glob("*.html")) - before, key=lambda p: p.stat().st_mtime)
@@ -248,14 +133,12 @@ def optional_agent_turn(
 
 
 def local_reply(message: str) -> str:
-    clean = message.strip()
-    if not clean:
-        return "Tell the quest booth what you need turned into an adventure."
-
+    """Fallback when the agent can't be imported (e.g. backend/env not configured yet)."""
+    if not message.strip():
+        return "Tell the dentures what game you'd like them to build."
     return (
-        "I am the temporary quest booth for the circus. "
-        "The real agent team will plug in through `agents.py` later. "
-        f"For now, I heard: {clean!r}. Pick a faux adventure from the dropdown and inspect the live HTML stage."
+        "I couldn't reach the game engine — check that your model backend is configured "
+        "(see README: set LLAMACPP_BASE_URL / LLAMACPP_API_KEY in .env)."
     )
 
 
@@ -264,17 +147,30 @@ def ensure_user_id(user_id: str | None) -> str:
     return user_id or f"u-{uuid.uuid4().hex[:12]}"
 
 
+def ensure_session_id(session_id: str | None) -> str:
+    """The current chat session; reset by the 'New session' button to clear agent history."""
+    return session_id or f"s-{uuid.uuid4().hex[:12]}"
+
+
+def new_session() -> tuple[list[dict[str, str]], str, str]:
+    """Start a fresh session: clear the chat to the welcome and mint a new session_id so the
+    agent's history (keyed by session_id) starts empty. Shared adventures are untouched."""
+    return list(WELCOME_MESSAGE), "", f"s-{uuid.uuid4().hex[:12]}"
+
+
 def chat_turn(
     message: str,
     history: list[dict[str, str]] | None,
     selected_adventure: str | None,
     user_id: str | None,
-) -> tuple[str, list[dict[str, str]], gr.Dropdown, str, dict, dict, str]:
+    session_id: str | None,
+) -> tuple[str, list[dict[str, str]], gr.Dropdown, str, dict, dict, str, str]:
     user_id = ensure_user_id(user_id)
+    session_id = ensure_session_id(session_id)
     next_history = list(history or [])
     if message.strip():
         next_history.append({"role": "user", "content": message})
-    reply, adventure_path = optional_agent_turn(message, selected_adventure, user_id)
+    reply, adventure_path = optional_agent_turn(message, selected_adventure, user_id, session_id)
     next_history.append({"role": "assistant", "content": reply})
 
     choices = adventure_choices()
@@ -304,6 +200,7 @@ def chat_turn(
         col_update,
         open_btn_update,
         user_id,
+        session_id,
     )
 
 
@@ -447,8 +344,8 @@ def build_app() -> gr.Blocks:
     with gr.Blocks(title=APP_TITLE) as demo:
         with gr.Column(elem_id="adpd-shell"):
             gr.Markdown(
-                "# Amazing Digital Pet Adventures\n"
-                "Turn chores, goals, and odd little obligations into playable HTML adventures.",
+                "# Amazing Digital Pet Dentures\n"
+                "Creates playable HTML adventures.",
                 elem_id="adpd-title",
             )
             with gr.Row(equal_height=False):
@@ -457,24 +354,24 @@ def build_app() -> gr.Blocks:
                 with gr.Column(scale=3, elem_id="chat-col"):
                     with gr.Group(elem_id="booth-panel"):
                         gr.Markdown(
-                            "## Quest Booth\n"
-                            "Bright circus tasks, big-top energy.",
+                            "## Chat with the Dentures\n"
+                            "Tell them a vibe — they'll build you a playable game.",
                             elem_id="booth-title",
                         )
                     with gr.Group(elem_id="chat-panel"):
+                        with gr.Row(elem_id="chat-toolbar"):
+                            new_session_btn = gr.Button(
+                                "🧹 New session", elem_id="new-session-btn",
+                                scale=0, min_width=150,
+                            )
                         chatbot = gr.Chatbot(
-                            value=[
-                                {
-                                    "role": "assistant",
-                                    "content": "Welcome to the quest booth. The agents arrive later; the adventure window works now.",
-                                }
-                            ],
-                            label="Quest Chat",
+                            value=list(WELCOME_MESSAGE),
+                            label="Chat with the Dentures",
                             height=520,
                         )
                         with gr.Row(elem_id="chat-input-row"):
                             message = gr.Textbox(
-                                placeholder="Tell the booth what quest you need...",
+                                placeholder="Chat with the dentures...",
                                 lines=1,
                                 max_lines=6,
                                 autofocus=True,
@@ -529,14 +426,23 @@ def build_app() -> gr.Blocks:
                 inputs=None,
                 outputs=[adventure_col, open_btn],
             )
-            # Persisted in the browser's localStorage → stable per-browser user/session id
-            # across reloads, so each visitor keeps their own history + memory.
+            # Persisted in the browser's localStorage across reloads:
+            #  - user_id: stable per browser (forward-compatible with future accounts).
+            #  - session_id: the current chat; reset by "New session" to clear agent history.
             user_state = gr.BrowserState("", storage_key="adpd_user_id")
+            session_state = gr.BrowserState("", storage_key="adpd_session_id")
+
+            new_session_btn.click(
+                new_session,
+                inputs=None,
+                outputs=[chatbot, message, session_state],
+            )
 
             chat_io = dict(
                 fn=chat_turn,
-                inputs=[message, chatbot, adventure_dropdown, user_state],
-                outputs=[message, chatbot, adventure_dropdown, adventure_view, adventure_col, open_btn, user_state],
+                inputs=[message, chatbot, adventure_dropdown, user_state, session_state],
+                outputs=[message, chatbot, adventure_dropdown, adventure_view, adventure_col,
+                         open_btn, user_state, session_state],
             )
             message.submit(**chat_io)
             send_button.click(**chat_io)
