@@ -233,17 +233,23 @@ def build_app() -> gr.Blocks:
     }
     .gradio-container {
       min-height: 100vh;
+      max-width: 100% !important;
+      padding: 0 !important;
       background:
         linear-gradient(45deg, rgba(23,23,23,.06) 25%, transparent 25%) 0 0 / 28px 28px,
         linear-gradient(-45deg, rgba(23,23,23,.06) 25%, transparent 25%) 0 0 / 28px 28px,
         var(--adpd-paper);
       color: var(--adpd-ink);
+      overflow: hidden;
     }
     #adpd-shell {
       max-width: 100%;
       margin: 0;
-      padding: 8px;
+      padding: 6px;
+      gap: 6px;
     }
+    /* Tighten Gradio's default vertical gaps so everything fits one screen. */
+    #adpd-shell .gap { gap: 6px !important; }
     #adpd-title {
       border: 2px solid var(--adpd-ink);
       border-radius: 6px;
@@ -274,10 +280,10 @@ def build_app() -> gr.Blocks:
     #adventure-panel {
       background: var(--adpd-blue);
     }
-    #toy-chat { height: 78vh !important; }
+    #toy-chat { height: calc(100vh - 215px) !important; }
     .adventure-frame {
       width: 100%;
-      height: 78vh;
+      height: calc(100vh - 150px);
       border: 2px solid var(--adpd-ink);
       border-radius: 6px;
       background: white;
@@ -300,11 +306,12 @@ def build_app() -> gr.Blocks:
     }
     #adventure-label h3 { margin: 0; }
     @media (max-width: 900px) {
-      .adventure-frame, #toy-chat { height: 60vh !important; }
+      .adventure-frame { height: 70vh !important; }
+      #toy-chat { height: calc(70vh - 120px) !important; }
     }
     """
 
-    with gr.Blocks(title=APP_TITLE) as demo:
+    with gr.Blocks(title=APP_TITLE, fill_width=True) as demo:
         with gr.Column(elem_id="adpd-shell"):
             gr.Markdown(
                 "# Amazing Digital Pet Dentures\n"
@@ -323,7 +330,7 @@ def build_app() -> gr.Blocks:
                             value=list(WELCOME_MESSAGE),
                             show_label=False,
                             elem_id="toy-chat",
-                            height="78vh",
+                            height="calc(100vh - 215px)",
                         )
                         with gr.Row(elem_id="chat-input-row"):
                             message = gr.Textbox(
