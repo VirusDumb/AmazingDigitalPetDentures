@@ -240,112 +240,67 @@ def build_app() -> gr.Blocks:
       color: var(--adpd-ink);
     }
     #adpd-shell {
-      max-width: 1440px;
-      margin: 0 auto;
-      padding: 18px;
+      max-width: 100%;
+      margin: 0;
+      padding: 8px;
     }
     #adpd-title {
-      border: 4px solid var(--adpd-ink);
-      border-radius: 8px;
+      border: 2px solid var(--adpd-ink);
+      border-radius: 6px;
       background: var(--adpd-yellow);
-      box-shadow: 8px 8px 0 var(--adpd-ink);
-      padding: 18px 20px;
-      margin-bottom: 18px;
+      box-shadow: 4px 4px 0 var(--adpd-ink);
+      padding: 6px 14px;
+      margin-bottom: 8px;
     }
-    #adpd-title h1, #booth-title h2 {
-      font-size: clamp(2.2rem, 5vw, 5.2rem);
-      line-height: 1;
-      margin-bottom: .35rem;
-      letter-spacing: 0;
+    #adpd-title h1 {
+      font-size: clamp(1.1rem, 2vw, 1.7rem);
+      line-height: 1.1;
+      margin: 0;
       color: var(--adpd-ink);
     }
     #adpd-title p {
-      font-size: 1.1rem;
-      max-width: 820px;
+      font-size: .9rem;
+      margin: 2px 0 0;
       color: var(--adpd-ink);
       font-weight: 700;
     }
-    #booth-panel, #chat-panel, #adventure-panel {
-      border: 4px solid var(--adpd-ink);
-      border-radius: 8px;
-      background: white;
-      box-shadow: 8px 8px 0 var(--adpd-ink);
-    }
-    #booth-panel {
-      padding: 18px 18px 14px;
-      min-height: 150px;
-      background:
-        linear-gradient(90deg, var(--adpd-red) 0 16.66%, white 16.66% 33.33%, var(--adpd-blue) 33.33% 50%, white 50% 66.66%, var(--adpd-red) 66.66% 83.33%, white 83.33% 100%);
-      color: var(--adpd-ink);
-      display: flex;
-      align-items: end;
-    }
     #chat-panel, #adventure-panel {
-      padding: 14px;
-    }
-    #chat-panel {
-      background: #fefefe;
-      margin-top: 18px;
+      border: 2px solid var(--adpd-ink);
+      border-radius: 6px;
+      background: white;
+      box-shadow: 4px 4px 0 var(--adpd-ink);
+      padding: 8px;
     }
     #adventure-panel {
-      min-height: 680px;
       background: var(--adpd-blue);
     }
+    #toy-chat { height: 78vh !important; }
     .adventure-frame {
       width: 100%;
-      height: 660px;
-      border: 4px solid var(--adpd-ink);
-      border-radius: 8px;
+      height: 78vh;
+      border: 2px solid var(--adpd-ink);
+      border-radius: 6px;
       background: white;
-      box-shadow: 6px 6px 0 rgba(23,23,23,.35);
-    }
-    #booth-title {
-      width: 100%;
-      background: var(--adpd-yellow);
-      border: 4px solid var(--adpd-ink);
-      border-radius: 8px;
-      padding: 12px;
-      box-shadow: 6px 6px 0 var(--adpd-ink);
-    }
-    #booth-title h2 {
-      font-size: clamp(1.5rem, 3vw, 2.8rem);
-      margin: 0;
-    }
-    #booth-title p {
-      margin: 8px 0 0;
-      font-weight: 800;
-      line-height: 1.35;
     }
     #chat-panel textarea {
-      min-height: 58px !important;
+      min-height: 46px !important;
     }
     button, select, input, textarea {
-      border-radius: 8px !important;
+      border-radius: 6px !important;
     }
     button {
-      border: 3px solid var(--adpd-ink) !important;
-      box-shadow: 4px 4px 0 var(--adpd-ink) !important;
-      font-weight: 900 !important;
-    }
-    #open-adventure-btn {
-      width: 100%;
-      margin-top: 16px;
-      min-height: 70px;
-      font-size: clamp(1.1rem, 2vw, 1.5rem) !important;
-      background: var(--adpd-green) !important;
-      box-shadow: 6px 6px 0 var(--adpd-ink) !important;
+      border: 2px solid var(--adpd-ink) !important;
+      box-shadow: 3px 3px 0 var(--adpd-ink) !important;
+      font-weight: 800 !important;
     }
     #adventure-toolbar {
-      align-items: end;
-      gap: 10px;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
     }
-    #close-adventure-btn {
-      background: var(--adpd-red) !important;
-      color: white !important;
-    }
+    #adventure-label h3 { margin: 0; }
     @media (max-width: 900px) {
-      #adventure-panel { min-height: 520px; }
-      .adventure-frame { height: 500px; }
+      .adventure-frame, #toy-chat { height: 60vh !important; }
     }
     """
 
@@ -357,13 +312,7 @@ def build_app() -> gr.Blocks:
                 elem_id="adpd-title",
             )
             with gr.Row(equal_height=False):
-                with gr.Column(scale=3, elem_id="chat-col"):
-                    with gr.Group(elem_id="booth-panel"):
-                        gr.Markdown(
-                            "## Chat with the Dentures\n"
-                            "Tell them what to make — they'll build it in HTML, live.",
-                            elem_id="booth-title",
-                        )
+                with gr.Column(scale=4, elem_id="chat-col"):
                     with gr.Group(elem_id="chat-panel"):
                         with gr.Row(elem_id="chat-toolbar"):
                             new_session_btn = gr.Button(
@@ -372,8 +321,9 @@ def build_app() -> gr.Blocks:
                             )
                         chatbot = gr.Chatbot(
                             value=list(WELCOME_MESSAGE),
-                            label="Chat with the Dentures",
-                            height=520,
+                            show_label=False,
+                            elem_id="toy-chat",
+                            height="78vh",
                         )
                         with gr.Row(elem_id="chat-input-row"):
                             message = gr.Textbox(
