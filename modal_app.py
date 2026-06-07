@@ -2,10 +2,14 @@
 modal_app.py — serves NVIDIA Nemotron-3-Nano-30B-A3B via llama.cpp's `llama-server`
 on a Modal GPU, exposing an OpenAI-compatible endpoint.
 
-This is the FAST dev/demo backend. The Gradio app / agents never import modal — they
-point `LLAMACPP_BASE_URL` at the URL this prints and set `LLAMACPP_API_KEY` to the
-secret. (Keeps the 🦙 Llama Champion badge — the model runs on the llama.cpp runtime —
-but it's a cloud call, so it does NOT count for 🔌 Off-the-Grid. Known tradeoff.)
+This is an OPTIONAL dev/demo backend for machines without the RAM to run Nemotron
+locally. The CANONICAL run path is fully local (e.g. a Mac with 32 GB+ running Nemotron
+via a local llama-server) — that path is 🔌 Off-the-Grid (all inference on-device; only
+one-time model downloads touch the network) AND 🦙 Llama Champion (llama.cpp runtime).
+The Gradio app / agents never import modal — they just point `LLAMACPP_BASE_URL` at a
+llama.cpp endpoint and set `LLAMACPP_API_KEY`. Pointing it at THIS Modal URL is the one
+choice that trades away Off-the-Grid (it's a cloud call); it keeps Llama Champion either
+way. Local embedding (MiniCPM via sentence-transformers) + LanceDB stay off-grid regardless.
 
 Built on Modal's official LLM-serving pattern (https://modal.com/docs/examples/llm_inference
 and /vllm_inference): the same `@app.function` → `@modal.concurrent` → `@modal.web_server`
@@ -56,10 +60,10 @@ MIN = 60  # seconds
 
 # ---- Config ----
 MODEL_REPO = "unsloth/Nemotron-3-Nano-30B-A3B-GGUF"
-MODEL_QUANT = "UD-Q4_K_XL"                       # ≈ 22.8 GB, single file. VERIFIED on Files tab.
+MODEL_QUANT = "Q8_0"                             # ≈ 33.6 GB. Confirm this exact tag on the repo Files tab.
 MODEL_ALIAS = "unsloth/Nemotron-3-Nano-30B-A3B"  # the model id llama-server reports / Agno sends
 PORT = 8080
-GPU = "L40S"                                      # 48 GB — fits the 22.8 GB quant + buffers
+GPU = "L40S"                                      # 48 GB — fits the 33.6 GB Q8 quant + KV cache + buffers
 
 # The official ggml image puts the binary at /app/llama-server; we also check PATH so an
 # image layout change won't silently break the launch.
@@ -115,8 +119,17 @@ def serve():
         "--port", str(PORT),
         "--api-key", api_key,
         "--jinja",                             # chat template + tool-calling support
+        "--reasoning-budget", "0",             # DISABLE <think> reasoning. Nemotron was looping
+                                               # in chain-of-thought and never calling the tool;
+                                               # non-thinking mode ships the game immediately.
         "-ngl", "99",                          # offload all layers to the GPU
-        "-c", "16384",                         # context (Mamba state is constant-size → cheap)
+        # Context: bumped 16384 -> 65536. Real requests (system prompt + injected RAG patterns
+        # + tool schemas + chat history that now carries full game HTML + a read_file of a game
+        # being edited) were hitting ~20K tokens and 400ing ("exceeds context size"). 64K gives
+        # ~3x headroom over the app's real prompts. Hybrid Mamba-2 + no RoPE makes long context
+        # cheap; Q8 (~33.6 GB) on the 48 GB L40S still has comfortable KV room at 64K. To go to
+        # 128K, drop to Q6_K (~26 GB) for more KV headroom — see git history / AskUserQuestion notes.
+        "-c", "65536",
         # Unsloth-recommended sampling (Agno can still override per request):
         "--temp", "0.6",
         "--top-p", "0.95",
@@ -182,8 +195,27 @@ def test():
         "temperature": 0.6,
         "max_tokens": 256,
     }).encode()
-    req = urllib.request.Request(base + "/v1/chat/completions", data=payload,
-                                 headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=120) as r:
-        body = json.loads(r.read())
-    print("reply:", body["choices"][0]["message"]["content"])
+
+    # /v1/models can return 200 while the model is still warming up, so the completion may
+    # 503 ("Loading model") for a bit. Retry on 503 (and transient connection errors); bail
+    # immediately on a real error like 400/401.
+    for attempt in range(1, 41):  # up to ~10 min at 15s spacing
+        try:
+            req = urllib.request.Request(base + "/v1/chat/completions", data=payload,
+                                         headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=120) as r:
+                body = json.loads(r.read())
+            print("reply:", body["choices"][0]["message"]["content"])
+            return
+        except urllib.error.HTTPError as e:
+            if e.code == 503:
+                print(f"  503 (model still loading) — retry {attempt}/40 in 15s ...")
+                time.sleep(15)
+                continue
+            print(f"chat completion failed: HTTP {e.code} — {e.read().decode(errors='ignore')}")
+            return
+        except Exception as e:  # transient connection reset / timeout during warmup
+            print(f"  request error ({e!r}) — retry {attempt}/40 in 15s ...")
+            time.sleep(15)
+            continue
+    print("gave up after 40 retries — server kept returning 503 / errors.")

@@ -113,8 +113,10 @@ def optional_agent_turn(
     except Exception:
         return local_reply(message), None
 
-    # Snapshot the folder so we can spot an adventure the Adventure Engineer just wrote.
-    before = set(ADVENTURES_DIR.glob("*.html"))
+    # Snapshot path -> mtime so we can spot a game the agent just CREATED or EDITED this
+    # turn. (The agent now also has purely conversational turns — pitching ideas, asking
+    # clarifying questions — which touch no file; those return None and don't open a window.)
+    before = {p: p.stat().st_mtime for p in ADVENTURES_DIR.glob("*.html")}
     try:
         # Stable per-browser user_id; session_id is resettable via the "New session" button,
         # so each session starts with clean history.
@@ -127,8 +129,10 @@ def optional_agent_turn(
         return f"The dentures hit a snag: {exc}", None
 
     reply = _response_text(response)
-    new_files = sorted(set(ADVENTURES_DIR.glob("*.html")) - before, key=lambda p: p.stat().st_mtime)
-    adventure_path = str(new_files[-1]) if new_files else None
+    # A game was touched if its file is new or its mtime changed (covers write_file + edit_file).
+    touched = [p for p in ADVENTURES_DIR.glob("*.html") if p.stat().st_mtime != before.get(p)]
+    touched.sort(key=lambda p: p.stat().st_mtime)
+    adventure_path = str(touched[-1]) if touched else None
     return reply, adventure_path
 
 

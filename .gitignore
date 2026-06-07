@@ -9,9 +9,8 @@ CLAUDE.md
 *.env
 !.env.example      # keep the template tracked
 
-# ---- Local agno SQLite db (session history + user memory) ----
-adpd.db
-adpd.db-*
+# ---- Local databases: session history (SQLite) + game-patterns vector store (LanceDB) ----
+db/
 *.sqlite
 *.sqlite3
 
