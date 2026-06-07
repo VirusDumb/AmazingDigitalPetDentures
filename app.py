@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 import html
+import os
 import re
+
+# Disable Gradio's Node SSR sidecar BEFORE importing gradio. SSR (a separate Node proxy that
+# server-side-renders the page) was interfering with the dynamically-injected iframe preview;
+# pure client-side rendering is reliable for live HTML. On the HF Space THIS env var is what
+# counts — the SDK launches the `app` object itself, so the launch(ssr_mode=...) at the bottom
+# only affects local runs.
+os.environ.setdefault("GRADIO_SSR_MODE", "false")
 
 import gradio as gr
 
@@ -199,19 +207,22 @@ def chat_turn(message: str, history: list[dict] | None, convo: list[dict] | None
 
 
 def hydrate(convo: list[dict] | None):
-    """On page load, restore the chat + last toy from the persisted BrowserState."""
+    """On page load, restore the chat + last toy from the persisted BrowserState.
+
+    The preview panel is always shown (so rendering never depends on a visibility update);
+    open_btn stays hidden while it's open.
+    """
     convo = list(convo or [])
     history = convo_to_history(convo)
     doc = latest_html(convo)
-    if doc:
-        return history, iframe_for(doc), gr.update(visible=True), gr.update(visible=False)
-    return history, empty_preview(), gr.update(visible=False), gr.update(visible=True)
+    view = iframe_for(doc) if doc else empty_preview()
+    return history, view, gr.update(visible=True), gr.update(visible=False)
 
 
 def new_session():
-    """Clear chat + history + preview."""
+    """Clear chat + history + preview (panel stays open, showing the empty placeholder)."""
     return (list(WELCOME_MESSAGE), "", [], empty_preview(),
-            gr.update(visible=False), gr.update(visible=True))
+            gr.update(visible=True), gr.update(visible=False))
 
 
 def open_preview():
@@ -396,8 +407,9 @@ def build_app() -> gr.Blocks:
                         "👉 Click here to open your last toy",
                         elem_id="open-adventure-btn",
                         variant="primary",
+                        visible=False,  # the preview is open by default; this shows after Close
                     )
-                with gr.Column(scale=7, visible=False, elem_id="adventure-col") as adventure_col:
+                with gr.Column(scale=7, visible=True, elem_id="adventure-col") as adventure_col:
                     with gr.Group(elem_id="adventure-panel"):
                         with gr.Row(elem_id="adventure-toolbar"):
                             gr.Markdown("### 🎪 Your toy", elem_id="adventure-label")
@@ -443,4 +455,4 @@ app = build_app()
 
 
 if __name__ == "__main__":
-    app.launch(css=APP_CSS)
+    app.launch(css=APP_CSS, ssr_mode=False)
