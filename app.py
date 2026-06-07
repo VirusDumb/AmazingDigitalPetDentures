@@ -231,18 +231,36 @@ def build_app() -> gr.Blocks:
       --adpd-green: #70e06a;
       --adpd-purple: #bd7bff;
     }
+    html, body, #root {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+    }
     .gradio-container {
-      min-height: 100vh;
+      width: 100vw !important;
+      max-width: none !important;
+      min-height: 100dvh;
+      height: 100dvh;
+      padding: 0 !important;
+      margin: 0 !important;
       background:
         linear-gradient(45deg, rgba(23,23,23,.06) 25%, transparent 25%) 0 0 / 28px 28px,
         linear-gradient(-45deg, rgba(23,23,23,.06) 25%, transparent 25%) 0 0 / 28px 28px,
         var(--adpd-paper);
       color: var(--adpd-ink);
+      overflow: hidden;
     }
     #adpd-shell {
-      max-width: 100%;
+      width: 100%;
+      max-width: none;
+      height: 100dvh;
       margin: 0;
       padding: 8px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow: hidden;
     }
     #adpd-title {
       border: 2px solid var(--adpd-ink);
@@ -250,7 +268,8 @@ def build_app() -> gr.Blocks:
       background: var(--adpd-yellow);
       box-shadow: 4px 4px 0 var(--adpd-ink);
       padding: 6px 14px;
-      margin-bottom: 8px;
+      margin: 0;
+      flex: 0 0 auto;
     }
     #adpd-title h1 {
       font-size: clamp(1.1rem, 2vw, 1.7rem);
@@ -264,23 +283,69 @@ def build_app() -> gr.Blocks:
       color: var(--adpd-ink);
       font-weight: 700;
     }
+    #adpd-main-row {
+      flex: 1 1 auto;
+      min-height: 0;
+      gap: 10px;
+      margin: 0;
+      overflow: hidden;
+    }
+    #chat-col, #adventure-col {
+      min-height: 0;
+      height: 100%;
+    }
     #chat-panel, #adventure-panel {
       border: 2px solid var(--adpd-ink);
       border-radius: 6px;
       background: white;
       box-shadow: 4px 4px 0 var(--adpd-ink);
       padding: 8px;
+      height: 100%;
+      min-height: 0;
+      box-sizing: border-box;
+      overflow: hidden;
     }
     #adventure-panel {
       background: var(--adpd-blue);
     }
-    #toy-chat { height: 78vh !important; }
+    #chat-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #adventure-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #chat-toolbar, #chat-input-row, #adventure-toolbar {
+      flex: 0 0 auto;
+    }
+    #toy-chat {
+      flex: 1 1 auto;
+      min-height: 0 !important;
+      height: auto !important;
+    }
+    #toy-chat .wrap {
+      height: 100% !important;
+      min-height: 0 !important;
+    }
     .adventure-frame {
       width: 100%;
-      height: 78vh;
+      height: 100%;
       border: 2px solid var(--adpd-ink);
       border-radius: 6px;
       background: white;
+      display: block;
+      box-sizing: border-box;
+    }
+    #adventure-panel .html-container,
+    #adventure-panel .prose,
+    #adventure-panel .gradio-html {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
     }
     #chat-panel textarea {
       min-height: 46px !important;
@@ -296,22 +361,39 @@ def build_app() -> gr.Blocks:
     #adventure-toolbar {
       align-items: center;
       gap: 8px;
-      margin-bottom: 6px;
+      margin: 0;
     }
     #adventure-label h3 { margin: 0; }
     @media (max-width: 900px) {
-      .adventure-frame, #toy-chat { height: 60vh !important; }
+      html, body, #root, .gradio-container {
+        height: auto;
+        min-height: 100dvh;
+        overflow: auto;
+      }
+      #adpd-shell {
+        height: auto;
+        min-height: 100dvh;
+        overflow: visible;
+      }
+      #adpd-main-row {
+        overflow: visible;
+      }
+      #chat-panel, #adventure-panel {
+        height: auto;
+      }
+      #toy-chat { height: 42vh !important; }
+      .adventure-frame { height: 48vh; }
     }
     """
 
-    with gr.Blocks(title=APP_TITLE) as demo:
+    with gr.Blocks(title=APP_TITLE, css=APP_CSS) as demo:
         with gr.Column(elem_id="adpd-shell"):
             gr.Markdown(
                 "# Amazing Digital Pet Dentures\n"
                 "Describe anything — the dentures build it as a live HTML toy.",
                 elem_id="adpd-title",
             )
-            with gr.Row(equal_height=False):
+            with gr.Row(equal_height=False, elem_id="adpd-main-row"):
                 with gr.Column(scale=4, elem_id="chat-col"):
                     with gr.Group(elem_id="chat-panel"):
                         with gr.Row(elem_id="chat-toolbar"):
@@ -323,7 +405,7 @@ def build_app() -> gr.Blocks:
                             value=list(WELCOME_MESSAGE),
                             show_label=False,
                             elem_id="toy-chat",
-                            height="78vh",
+                            height=320,
                         )
                         with gr.Row(elem_id="chat-input-row"):
                             message = gr.Textbox(
