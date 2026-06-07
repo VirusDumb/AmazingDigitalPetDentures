@@ -1,0 +1,22 @@
+name: Sync to Hugging Face Hub
+
+# Mirrors this GitHub repo to the HF Space on every push to main (and on demand).
+# Uses the official huggingface/hub-sync action: it uploads file contents via the `hf`
+# CLI, auto-excludes .github/ and .git/, and removes files from the Space that were
+# deleted here. The model GGUF is downloaded at runtime, so there are no >10 MB files
+# to track with Git-LFS.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: huggingface/hub-sync@v0.1.0
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: build-small-hackathon/AmazingDigitalPetDentures
+          hf_token: ${{ secrets.HF_TOKEN }}

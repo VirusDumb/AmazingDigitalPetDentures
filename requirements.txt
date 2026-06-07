@@ -1,17 +1,20 @@
-# ---- Runtime deps — these install on the HF Space. Latest versions (unpinned). ----
-# gradio is the ONE exception: it must match README's sdk_version (what the Space runs).
-# To upgrade gradio, bump it here AND in README.md together.
-gradio==6.16.0     # UI framework — pinned to the Space sdk_version
-agno               # agent framework; LlamaCpp model = OpenAILike (any OpenAI-compatible endpoint)
-openai             # transport used by agno's OpenAILike (our Modal / llama.cpp server)
-huggingface_hub    # model/dataset access + Space OAuth (used later for persistence)
-python-dotenv      # load LLAMACPP_BASE_URL / LLAMACPP_API_KEY from a local .env during dev
-sqlalchemy         # backend for agno's SqliteDb (session history + user memory)
-lancedb            # local vector store for the game-patterns knowledge base (Traditional RAG)
-sentence-transformers  # runs the embedder (openbmb/MiniCPM-Embedding-Light); pulls torch+transformers
-einops             # required by MiniCPM-Embedding-Light's trust_remote_code custom model code
-transformers==4.57.6  # MiniCPM's trust_remote_code code targets transformers 4.x (5.x dropped
-                      # is_torch_fx_available). Pinned to the version verified working locally.
-tiktoken           # MiniCPM-Embedding-Light's tokenizer needs the tiktoken reader available
-sentencepiece      # MiniCPM tokenizer is a SentencePiece .model; provides the slow->fast converter
-protobuf           # required by the SentencePiece tokenizer converter
+# ---- Runtime deps for the HF Space (ZeroGPU, in-process llama.cpp) ----
+# The app runs the model IN-PROCESS via llama-cpp-python on ZeroGPU (@spaces.GPU),
+# so there is no Modal/OpenAI server and no Agno. Set python_version: '3.12' in
+# README.md so the prebuilt wheels below resolve.
+
+# torch ships the CUDA libs llama.cpp needs at runtime (cu128 index).
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.8.0
+
+hf_transfer        # fast GGUF download (HF_HUB_ENABLE_HF_TRANSFER=1, set in model.py)
+
+# Prebuilt llama-cpp-python CUDA wheel (cu124) — avoids a long CUDA build on the Space.
+# NOTE: this wheel tracks a specific llama.cpp version; if it can't load Nemotron-3-Nano's
+# hybrid Mamba-2 arch ("unknown architecture"), bump to a newer wheel or build from source.
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
+llama-cpp-python
+
+gradio==6.16.0     # UI framework — must match README's sdk_version
+spaces             # provides @spaces.GPU (no-op off-ZeroGPU, so local dev still imports)
+huggingface_hub    # GGUF download (hf_hub_download / Llama.from_pretrained)

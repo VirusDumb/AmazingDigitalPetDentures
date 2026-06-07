@@ -1,55 +1,51 @@
 from __future__ import annotations
 
 import html
-import uuid
-from pathlib import Path
+import re
 
 import gradio as gr
 
+from instructions.toy_maker import toy_maker
 
-APP_TITLE = "Amazing Digital Pet Adventures"
-ADVENTURES_DIR = Path("adventures")
+
+APP_TITLE = "Amazing Digital Pet Dentures — HTML Toy Maker"
 APP_CSS = ""
 
-# Shown when the chat first loads and whenever a new session is started.
+# How many recent messages to keep (and send to the model). Bounds both the context window
+# and the ~5 MB localStorage cap (each assistant turn carries a full HTML doc).
+MAX_MESSAGES = 8
+
 WELCOME_MESSAGE = [
     {
         "role": "assistant",
-        "content": "Hi! I'm the dentures 🦷 — tell me a vibe or an idea and I'll build you a playable game. Hit 🧹 New session anytime to start fresh.",
+        "content": "Hi! I'm the dentures 🦷 — describe anything (a game, a widget, a "
+                   "visualizer, a to-do list…) and I'll build it as a live HTML toy. "
+                   "Hit 🧹 New session to start over.",
     }
 ]
 
-
-def ensure_adventures() -> None:
-    """Make sure the shared adventures/ folder exists (the agent writes games into it)."""
-    ADVENTURES_DIR.mkdir(exist_ok=True)
-
-
-def adventure_choices() -> list[str]:
-    ensure_adventures()
-    return sorted(path.name for path in ADVENTURES_DIR.glob("*.html"))
+# ---- HTML extraction -------------------------------------------------------------------
+_THINK_RE = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
+_DOCTYPE_RE = re.compile(r"<!doctype html.*?</html>", re.IGNORECASE | re.DOTALL)
+_HTML_RE = re.compile(r"<html.*?</html>", re.IGNORECASE | re.DOTALL)
 
 
-def read_adventure(filename: str | None) -> str:
-    choices = adventure_choices()
-    selected = filename if filename in choices else choices[0] if choices else None
-    if selected is None:
-        return empty_adventure_html()
+def extract_html(reply: str | None) -> tuple[str, str | None]:
+    """Split a model reply into (chat_prose, html_doc_or_None).
 
-    path = ADVENTURES_DIR / selected
-    return path.read_text(encoding="utf-8")
-
-
-def empty_adventure_html() -> str:
-    return """<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8" /><title>No Adventure</title></head>
-<body style="font-family: system-ui; padding: 2rem;">
-  <h1>No adventures yet</h1>
-  <p>Ask the dentures to build you a game — it'll appear right here.</p>
-</body>
-</html>
-"""
+    Strips <think> blocks and ``` fences, then slices out <!doctype…>…</html>
+    (falls back to <html>…</html>). Whatever text is left becomes the chat message.
+    """
+    text = _THINK_RE.sub("", reply or "").strip()
+    # Drop triple-backtick fences but keep their contents.
+    text = re.sub(r"```[a-zA-Z0-9]*\n?", "", text).replace("```", "")
+    match = _DOCTYPE_RE.search(text) or _HTML_RE.search(text)
+    if not match:
+        return (text.strip() or "Hmm, I didn't produce anything that time — try again?"), None
+    html_doc = match.group(0).strip()
+    prose = (text[: match.start()] + " " + text[match.end():]).strip()
+    prose = re.sub(r"\s+", " ", prose).strip()
+    return (prose or "Here's your toy! 🎉"), html_doc
 
 
 def iframe_for(raw_html: str) -> str:
@@ -61,159 +57,117 @@ def iframe_for(raw_html: str) -> str:
     )
 
 
-def load_adventure(filename: str | None) -> str:
-    return iframe_for(read_adventure(filename))
-
-
-def reload_adventures() -> tuple[gr.Dropdown, str]:
-    choices = adventure_choices()
-    selected = choices[0] if choices else None
-    return gr.Dropdown(choices=choices, value=selected), load_adventure(selected)
-
-
-def latest_adventure() -> str | None:
-    """Name of the most recently created/modified adventure, or None if there are none."""
-    ensure_adventures()
-    files = list(ADVENTURES_DIR.glob("*.html"))
-    if not files:
-        return None
-    return max(files, key=lambda p: p.stat().st_mtime).name
-
-
-def open_adventure() -> tuple[dict, dict, gr.Dropdown, str]:
-    """Open the adventure window on the latest adventure (the 'continue' button)."""
-    choices = adventure_choices()
-    selected = latest_adventure()
-    if selected not in choices:
-        selected = choices[0] if choices else None
+def empty_preview_doc() -> str:
     return (
-        gr.update(visible=True),   # adventure_col
-        gr.update(visible=False),  # open_btn
-        gr.Dropdown(choices=choices, value=selected),
-        load_adventure(selected),  # falls back to empty_adventure_html() when None
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'></head>"
+        "<body style='font-family:system-ui;margin:0;display:grid;place-items:center;"
+        "height:100vh;color:#171717;background:#fff8df'>"
+        "<p style='font-weight:800'>Your toy will appear here. 🎪</p></body></html>"
     )
 
 
-def close_adventure() -> tuple[dict, dict]:
-    """Close the adventure window and bring back the 'continue' button."""
-    return gr.update(visible=False), gr.update(visible=True)
+def empty_preview() -> str:
+    return iframe_for(empty_preview_doc())
 
 
-def _response_text(response: object) -> str:
-    """Pull the assistant text out of an Agno run response."""
-    content = getattr(response, "content", response)
-    return str(content) if content is not None else ""
+# ---- Model call ------------------------------------------------------------------------
+def local_reply(message: str) -> str:
+    """Fallback when the model layer can't be imported/run (e.g. no GPU locally)."""
+    if not (message or "").strip():
+        return "Tell me what to build — e.g. 'a bouncing ball that follows my mouse'."
+    return (
+        "I couldn't reach the model. This runs in-process on **ZeroGPU** via "
+        "llama-cpp-python — check that the Space has ZeroGPU enabled and see the logs."
+    )
 
 
-def optional_agent_turn(
-    message: str, selected_adventure: str | None, user_id: str, session_id: str
-) -> tuple[str, str | None]:
+def run_model(messages: list[dict], user_message: str) -> str:
     try:
-        from agents import adventure_agent  # type: ignore
+        from model import generate  # imported lazily so app.py loads without torch/llama-cpp
     except Exception:
-        return local_reply(message), None
-
-    # Snapshot path -> mtime so we can spot a game the agent just CREATED or EDITED this
-    # turn. (The agent now also has purely conversational turns — pitching ideas, asking
-    # clarifying questions — which touch no file; those return None and don't open a window.)
-    before = {p: p.stat().st_mtime for p in ADVENTURES_DIR.glob("*.html")}
+        return local_reply(user_message)
     try:
-        # Stable per-browser user_id; session_id is resettable via the "New session" button,
-        # so each session starts with clean history.
-        response = adventure_agent.run(message, user_id=user_id, session_id=session_id)
-    except Exception as exc:  # keep the Gradio handler alive; surface the error in chat
+        return generate(messages)
+    except Exception as exc:  # keep the UI alive; surface the error in chat
         import sys
         import traceback
 
         traceback.print_exc(file=sys.stderr)
-        return f"The dentures hit a snag: {exc}", None
-
-    reply = _response_text(response)
-    # A game was touched if its file is new or its mtime changed (covers write_file + edit_file).
-    touched = [p for p in ADVENTURES_DIR.glob("*.html") if p.stat().st_mtime != before.get(p)]
-    touched.sort(key=lambda p: p.stat().st_mtime)
-    adventure_path = str(touched[-1]) if touched else None
-    return reply, adventure_path
+        return f"The toy maker hit a snag: {exc}"
 
 
-def local_reply(message: str) -> str:
-    """Fallback when the agent can't be imported (e.g. backend/env not configured yet)."""
-    if not message.strip():
-        return "Tell the dentures what game you'd like them to build."
-    return (
-        "I couldn't reach the game engine — check that your model backend is configured "
-        "(see README: set LLAMACPP_BASE_URL / LLAMACPP_API_KEY in .env)."
-    )
+# ---- History helpers (no Agno; convo lives in a BrowserState) ---------------------------
+def to_display(convo: list[dict]) -> list[dict]:
+    """Render the model-facing convo into chatbot messages (assistant = prose only)."""
+    display: list[dict] = []
+    for m in convo:
+        if m.get("role") == "user":
+            display.append({"role": "user", "content": m.get("content", "")})
+        else:
+            prose, _ = extract_html(m.get("content", ""))
+            display.append({"role": "assistant", "content": prose})
+    return display or list(WELCOME_MESSAGE)
 
 
-def ensure_user_id(user_id: str | None) -> str:
-    """A stable id for this browser; generate one on first use (persisted via BrowserState)."""
-    return user_id or f"u-{uuid.uuid4().hex[:12]}"
+def latest_html(convo: list[dict]) -> str | None:
+    for m in reversed(convo):
+        if m.get("role") == "assistant":
+            _, doc = extract_html(m.get("content", ""))
+            if doc:
+                return doc
+    return None
 
 
-def ensure_session_id(session_id: str | None) -> str:
-    """The current chat session; reset by the 'New session' button to clear agent history."""
-    return session_id or f"s-{uuid.uuid4().hex[:12]}"
+# ---- Event handlers --------------------------------------------------------------------
+def chat_turn(message: str, convo: list[dict] | None):
+    convo = list(convo or [])
+    msg = (message or "").strip()
+    if not msg:
+        return "", to_display(convo), convo, gr.update(), gr.update(), gr.update()
+
+    sent = [{"role": "system", "content": toy_maker}] + convo[-MAX_MESSAGES:]
+    sent.append({"role": "user", "content": msg})
+    reply = run_model(sent, msg)
+    prose, html_doc = extract_html(reply)
+
+    convo = (convo + [
+        {"role": "user", "content": msg},
+        {"role": "assistant", "content": reply},
+    ])[-MAX_MESSAGES:]
+    display = to_display(convo)
+
+    if html_doc:
+        return ("", display, convo, iframe_for(html_doc),
+                gr.update(visible=True), gr.update(visible=False))
+    return "", display, convo, gr.update(), gr.update(), gr.update()
 
 
-def new_session() -> tuple[list[dict[str, str]], str, str]:
-    """Start a fresh session: clear the chat to the welcome and mint a new session_id so the
-    agent's history (keyed by session_id) starts empty. Shared adventures are untouched."""
-    return list(WELCOME_MESSAGE), "", f"s-{uuid.uuid4().hex[:12]}"
+def hydrate(convo: list[dict] | None):
+    """On page load, restore the chat + last toy from the persisted BrowserState."""
+    convo = list(convo or [])
+    display = to_display(convo)
+    doc = latest_html(convo)
+    if doc:
+        return display, iframe_for(doc), gr.update(visible=True), gr.update(visible=False)
+    return display, empty_preview(), gr.update(visible=False), gr.update(visible=True)
 
 
-def chat_turn(
-    message: str,
-    history: list[dict[str, str]] | None,
-    selected_adventure: str | None,
-    user_id: str | None,
-    session_id: str | None,
-) -> tuple[str, list[dict[str, str]], gr.Dropdown, str, dict, dict, str, str]:
-    user_id = ensure_user_id(user_id)
-    session_id = ensure_session_id(session_id)
-    next_history = list(history or [])
-    if message.strip():
-        next_history.append({"role": "user", "content": message})
-    reply, adventure_path = optional_agent_turn(message, selected_adventure, user_id, session_id)
-    next_history.append({"role": "assistant", "content": reply})
+def new_session():
+    """Clear chat + history + preview and mint a blank session."""
+    return (list(WELCOME_MESSAGE), "", [], empty_preview(),
+            gr.update(visible=False), gr.update(visible=True))
 
-    choices = adventure_choices()
-    next_selection = selected_adventure
-    if adventure_path:
-        next_selection = Path(adventure_path).name
-        if next_selection not in choices:
-            choices = adventure_choices()
 
-    if next_selection not in choices:
-        next_selection = choices[0] if choices else None
+def open_preview():
+    return gr.update(visible=True), gr.update(visible=False)
 
-    # Auto-open the adventure window only when a NEW adventure was just generated;
-    # otherwise leave the open/closed state exactly as the user left it.
-    if adventure_path:
-        col_update = gr.update(visible=True)
-        open_btn_update = gr.update(visible=False)
-    else:
-        col_update = gr.update()
-        open_btn_update = gr.update()
 
-    return (
-        "",
-        next_history,
-        gr.Dropdown(choices=choices, value=next_selection),
-        load_adventure(next_selection),
-        col_update,
-        open_btn_update,
-        user_id,
-        session_id,
-    )
+def close_preview():
+    return gr.update(visible=False), gr.update(visible=True)
 
 
 def build_app() -> gr.Blocks:
     global APP_CSS
-
-    ensure_adventures()
-    choices = adventure_choices()
-    initial_adventure = choices[0] if choices else None
 
     APP_CSS = """
     :root {
@@ -321,7 +275,6 @@ def build_app() -> gr.Blocks:
       box-shadow: 4px 4px 0 var(--adpd-ink) !important;
       font-weight: 900 !important;
     }
-    /* Big glossy "continue your last adventure" call-to-action under the chat. */
     #open-adventure-btn {
       width: 100%;
       margin-top: 16px;
@@ -330,7 +283,6 @@ def build_app() -> gr.Blocks:
       background: var(--adpd-green) !important;
       box-shadow: 6px 6px 0 var(--adpd-ink) !important;
     }
-    /* Adventure toolbar: dropdown + a compact close control. */
     #adventure-toolbar {
       align-items: end;
       gap: 10px;
@@ -349,17 +301,15 @@ def build_app() -> gr.Blocks:
         with gr.Column(elem_id="adpd-shell"):
             gr.Markdown(
                 "# Amazing Digital Pet Dentures\n"
-                "Creates playable HTML adventures.",
+                "Describe anything — the dentures build it as a live HTML toy.",
                 elem_id="adpd-title",
             )
             with gr.Row(equal_height=False):
-                # Chat is the persistent primary window. When the adventure column is
-                # hidden, this flex-grows to full width on its own (no scale juggling).
                 with gr.Column(scale=3, elem_id="chat-col"):
                     with gr.Group(elem_id="booth-panel"):
                         gr.Markdown(
                             "## Chat with the Dentures\n"
-                            "Tell them a vibe — they'll build you a playable game.",
+                            "Tell them what to make — they'll build it in HTML, live.",
                             elem_id="booth-title",
                         )
                     with gr.Group(elem_id="chat-panel"):
@@ -375,7 +325,7 @@ def build_app() -> gr.Blocks:
                         )
                         with gr.Row(elem_id="chat-input-row"):
                             message = gr.Textbox(
-                                placeholder="Chat with the dentures...",
+                                placeholder="Describe a toy to build...",
                                 lines=1,
                                 max_lines=6,
                                 autofocus=True,
@@ -387,69 +337,49 @@ def build_app() -> gr.Blocks:
                                 "Send", variant="primary", scale=1, min_width=110
                             )
                     open_btn = gr.Button(
-                        "👉 Click here to continue your last adventure",
+                        "👉 Click here to open your last toy",
                         elem_id="open-adventure-btn",
                         variant="primary",
                     )
-                # The adventure window: hidden by default, opens side-by-side.
                 with gr.Column(scale=7, visible=False, elem_id="adventure-col") as adventure_col:
                     with gr.Group(elem_id="adventure-panel"):
                         with gr.Row(elem_id="adventure-toolbar"):
-                            adventure_dropdown = gr.Dropdown(
-                                choices=choices,
-                                value=initial_adventure,
-                                label="Adventure model",
-                                scale=8,
-                            )
+                            gr.Markdown("### 🎪 Your toy", elem_id="adventure-label")
                             close_btn = gr.Button(
-                                "✕ Close adventure",
+                                "✕ Close",
                                 elem_id="close-adventure-btn",
-                                scale=1,
+                                scale=0,
                                 min_width=140,
                             )
-                        refresh_button = gr.Button("Refresh adventures")
-                        adventure_view = gr.HTML(load_adventure(initial_adventure))
+                        adventure_view = gr.HTML(empty_preview())
 
-            adventure_dropdown.change(
-                load_adventure,
-                inputs=adventure_dropdown,
-                outputs=adventure_view,
-            )
-            refresh_button.click(
-                reload_adventures,
-                inputs=None,
-                outputs=[adventure_dropdown, adventure_view],
-            )
-            open_btn.click(
-                open_adventure,
-                inputs=None,
-                outputs=[adventure_col, open_btn, adventure_dropdown, adventure_view],
-            )
-            close_btn.click(
-                close_adventure,
-                inputs=None,
-                outputs=[adventure_col, open_btn],
-            )
-            # Persisted in the browser's localStorage across reloads:
-            #  - user_id: stable per browser (forward-compatible with future accounts).
-            #  - session_id: the current chat; reset by "New session" to clear agent history.
-            user_state = gr.BrowserState("", storage_key="adpd_user_id")
-            session_state = gr.BrowserState("", storage_key="adpd_session_id")
+            # Persisted in the browser's localStorage: the model-facing conversation
+            # (user turns + assistant turns incl. the full HTML). Survives reloads;
+            # more durable than the old ephemeral-disk SQLite. Cleared by "New session".
+            convo = gr.BrowserState([], storage_key="adpd_convo")
 
+            open_btn.click(open_preview, inputs=None, outputs=[adventure_col, open_btn])
+            close_btn.click(close_preview, inputs=None, outputs=[adventure_col, open_btn])
             new_session_btn.click(
                 new_session,
                 inputs=None,
-                outputs=[chatbot, message, session_state],
+                outputs=[chatbot, message, convo, adventure_view, adventure_col, open_btn],
             )
 
             chat_io = dict(
                 fn=chat_turn,
-                inputs=[message, chatbot, adventure_dropdown, user_state, session_state],
-                outputs=[message, chatbot, adventure_dropdown, adventure_view, adventure_col,
-                         open_btn, user_state, session_state],
+                inputs=[message, convo],
+                outputs=[message, chatbot, convo, adventure_view, adventure_col, open_btn],
             )
             message.submit(**chat_io)
             send_button.click(**chat_io)
+
+            # On page load, restore chat + last toy from the persisted convo.
+            demo.load(
+                hydrate,
+                inputs=[convo],
+                outputs=[chatbot, adventure_view, adventure_col, open_btn],
+            )
     return demo
 
 

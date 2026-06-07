@@ -5,7 +5,7 @@ colorFrom: pink
 colorTo: gray
 sdk: gradio
 sdk_version: 6.16.0
-python_version: '3.13'
+python_version: '3.12'
 app_file: app.py
 pinned: false
 short_description: The Amazing Digital Pet Dentures feeds on your Adventures

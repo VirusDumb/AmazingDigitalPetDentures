@@ -1,0 +1,17 @@
+# ---- Runtime deps — these install on the HF Space. Latest versions (unpinned). ----
+# gradio is the ONE exception: it must match README's sdk_version (what the Space runs).
+# To upgrade gradio, bump it here AND in README.md together.
+gradio==6.16.0     # UI framework — pinned to the Space sdk_version
+agno               # agent framework; LlamaCpp model = OpenAILike (any OpenAI-compatible endpoint)
+openai             # transport used by agno's OpenAILike (our Modal / llama.cpp server)
+huggingface_hub    # model/dataset access + Space OAuth (used later for persistence)
+python-dotenv      # load LLAMACPP_BASE_URL / LLAMACPP_API_KEY from a local .env during dev
+sqlalchemy         # backend for agno's SqliteDb (session history + user memory)
+lancedb            # local vector store for the game-patterns knowledge base (Traditional RAG)
+sentence-transformers  # runs the embedder (openbmb/MiniCPM-Embedding-Light); pulls torch+transformers
+einops             # required by MiniCPM-Embedding-Light's trust_remote_code custom model code
+transformers==4.57.6  # MiniCPM's trust_remote_code code targets transformers 4.x (5.x dropped
+                      # is_torch_fx_available). Pinned to the version verified working locally.
+tiktoken           # MiniCPM-Embedding-Light's tokenizer needs the tiktoken reader available
+sentencepiece      # MiniCPM tokenizer is a SentencePiece .model; provides the slow->fast converter
+protobuf           # required by the SentencePiece tokenizer converter
