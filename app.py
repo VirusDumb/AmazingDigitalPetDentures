@@ -7,6 +7,21 @@ import gradio as gr
 
 from instructions.toy_maker import toy_maker
 
+# Import the model layer EAGERLY at startup. HF ZeroGPU only detects @spaces.GPU functions
+# that are registered while the app module is importing — a lazy/in-function import means the
+# decorated `generate` is never seen at startup ("No @spaces.GPU function detected"). The
+# try/except keeps app.py importable locally (no torch/llama-cpp/spaces installed); on the
+# Space the deps exist, the import succeeds, and ZeroGPU registers the GPU function.
+try:
+    from model import generate as model_generate
+except Exception as _model_import_error:  # noqa: F841 — surfaced in logs below
+    import sys
+    import traceback
+
+    print("[app] model layer not available — using fallback replies. Reason:", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
+    model_generate = None
+
 
 APP_TITLE = "Amazing Digital Pet Dentures — HTML Toy Maker"
 APP_CSS = ""
@@ -82,12 +97,10 @@ def local_reply(message: str) -> str:
 
 
 def run_model(messages: list[dict], user_message: str) -> str:
-    try:
-        from model import generate  # imported lazily so app.py loads without torch/llama-cpp
-    except Exception:
+    if model_generate is None:
         return local_reply(user_message)
     try:
-        return generate(messages)
+        return model_generate(messages)
     except Exception as exc:  # keep the UI alive; surface the error in chat
         import sys
         import traceback
