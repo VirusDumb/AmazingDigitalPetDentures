@@ -179,7 +179,7 @@ def chat_turn(message: str, history: list[dict] | None, convo: list[dict] | None
     convo = list(convo or [])
     msg = (message or "").strip()
     if not msg:
-        return "", history, convo, gr.update(), gr.update(), gr.update()
+        return "", history, convo, gr.update()
 
     history.append({"role": "user", "content": msg})
     sent = [{"role": "system", "content": toy_maker}] + convo[-MAX_MESSAGES:]
@@ -200,37 +200,22 @@ def chat_turn(message: str, history: list[dict] | None, convo: list[dict] | None
     convo.append({"role": "assistant", "content": answer})
     convo = convo[-MAX_MESSAGES:]
 
-    if doc:
-        return ("", history, convo, iframe_for(doc),
-                gr.update(visible=True), gr.update(visible=False))
-    return "", history, convo, gr.update(), gr.update(), gr.update()
+    # The preview panel is always on; only swap its content when we have a new toy.
+    view = iframe_for(doc) if doc else gr.update()
+    return "", history, convo, view
 
 
 def hydrate(convo: list[dict] | None):
-    """On page load, restore the chat + last toy from the persisted BrowserState.
-
-    The preview panel is always shown (so rendering never depends on a visibility update);
-    open_btn stays hidden while it's open.
-    """
+    """On page load, restore the chat + last toy from the persisted BrowserState."""
     convo = list(convo or [])
     history = convo_to_history(convo)
     doc = latest_html(convo)
-    view = iframe_for(doc) if doc else empty_preview()
-    return history, view, gr.update(visible=True), gr.update(visible=False)
+    return history, (iframe_for(doc) if doc else empty_preview())
 
 
 def new_session():
-    """Clear chat + history + preview (panel stays open, showing the empty placeholder)."""
-    return (list(WELCOME_MESSAGE), "", [], empty_preview(),
-            gr.update(visible=True), gr.update(visible=False))
-
-
-def open_preview():
-    return gr.update(visible=True), gr.update(visible=False)
-
-
-def close_preview():
-    return gr.update(visible=False), gr.update(visible=True)
+    """Clear chat + history + preview (panel stays on, showing the empty placeholder)."""
+    return list(WELCOME_MESSAGE), "", [], empty_preview()
 
 
 def build_app() -> gr.Blocks:
@@ -404,22 +389,11 @@ def build_app() -> gr.Blocks:
                             send_button = gr.Button(
                                 "Send", variant="primary", scale=1, min_width=110
                             )
-                    open_btn = gr.Button(
-                        "👉 Click here to open your last toy",
-                        elem_id="open-adventure-btn",
-                        variant="primary",
-                        visible=False,  # the preview is open by default; this shows after Close
-                    )
-                with gr.Column(scale=7, visible=True, elem_id="adventure-col") as adventure_col:
+                # The preview panel is always on (no open/close) — it just shows the latest toy.
+                with gr.Column(scale=7, elem_id="adventure-col"):
                     with gr.Group(elem_id="adventure-panel"):
                         with gr.Row(elem_id="adventure-toolbar"):
                             gr.Markdown("### 🎪 Your toy", elem_id="adventure-label")
-                            close_btn = gr.Button(
-                                "✕ Close",
-                                elem_id="close-adventure-btn",
-                                scale=0,
-                                min_width=140,
-                            )
                         adventure_view = gr.HTML(empty_preview())
 
             # Persisted in the browser's localStorage: the model-facing conversation (user
@@ -427,28 +401,22 @@ def build_app() -> gr.Blocks:
             # more durable than the old ephemeral-disk SQLite. Cleared by "New session".
             convo = gr.BrowserState([], storage_key="adpd_convo")
 
-            open_btn.click(open_preview, inputs=None, outputs=[adventure_col, open_btn])
-            close_btn.click(close_preview, inputs=None, outputs=[adventure_col, open_btn])
             new_session_btn.click(
                 new_session,
                 inputs=None,
-                outputs=[chatbot, message, convo, adventure_view, adventure_col, open_btn],
+                outputs=[chatbot, message, convo, adventure_view],
             )
 
             chat_io = dict(
                 fn=chat_turn,
                 inputs=[message, chatbot, convo],
-                outputs=[message, chatbot, convo, adventure_view, adventure_col, open_btn],
+                outputs=[message, chatbot, convo, adventure_view],
             )
             message.submit(**chat_io)
             send_button.click(**chat_io)
 
             # On page load, restore chat + last toy from the persisted convo.
-            demo.load(
-                hydrate,
-                inputs=[convo],
-                outputs=[chatbot, adventure_view, adventure_col, open_btn],
-            )
+            demo.load(hydrate, inputs=[convo], outputs=[chatbot, adventure_view])
     return demo
 
 
