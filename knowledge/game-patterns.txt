@@ -1,3 +1,7 @@
+> **Abandoned path:** We gave up on this as a from-scratch game-generation path.
+> These patterns and examples remain here as reference/source material for the
+> pivot, especially template remixing.
+
 # Game Patterns for Single-File HTML Games
 
 Lean browser-native patterns for generated games. Use one `.html` file. Use raw Canvas 2D, or three.js by CDN importmap for 3D. No build step, multiple files, backend runtime, alternate engines, multiplayer stacks, distribution notes, or architecture essays.
@@ -940,4 +944,3 @@ let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,
 ```
 
 Model should copy: Copy the lane interpolation, object spawning/recycling, pickup vs obstacle handling, camera setup, and importmap.
-

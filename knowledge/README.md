@@ -1,3 +1,8 @@
+> **Abandoned path:** We gave up on this as a from-scratch game-generation path.
+> This knowledge base remains here as reference/source material for the pivot,
+> especially for remixing known-good templates instead of generating games from
+> nothing.
+
 # Knowledge base — `game-patterns.txt`
 
 `game-patterns.txt` is the agent's game-development knowledge base: a code-forward

@@ -1,3 +1,7 @@
+> **Abandoned path:** We gave up on this as a from-scratch game-generation path.
+> This skill material remains here as reference/source material for the pivot;
+> it is not the current runtime plan.
+
 # Skills — attribution
 
 ## `game-engine/`

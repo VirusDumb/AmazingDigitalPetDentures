@@ -1,4 +1,14 @@
+"""Abandoned generate-from-scratch agent pipeline.
+
+We gave up on this as a from-scratch game-generation path. This module is kept
+as evidence/reference for the pivot: the working pieces are the llama.cpp model
+wiring, CodingTools sandbox, iframe-compatible adventure files, and Traditional
+RAG plumbing, not the idea that this small model can design whole games from
+nothing.
+"""
+
 import os
+import re
 from pathlib import Path
 
 from instructions.adventure_engineer import adventure_engineer
@@ -8,6 +18,9 @@ from agno.tools.coding import CodingTools
 from agno.db.sqlite import SqliteDb
 from agno.knowledge.knowledge import Knowledge
 from agno.knowledge.embedder.sentence_transformer import SentenceTransformerEmbedder
+from agno.knowledge.reader.text_reader import TextReader
+from agno.knowledge.chunking.strategy import ChunkingStrategy
+from agno.knowledge.document.base import Document
 from agno.vectordb.lancedb import LanceDb, SearchType
 from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
@@ -44,6 +57,27 @@ game_embedder = SentenceTransformerEmbedder(
     normalize_embeddings=True,
 )
 
+# game-patterns.txt mixes short technique snippets (## headers) with 10 complete game
+# exemplars (### headers). Blind fixed-size chunking (Agno's default, 5000 chars) would
+# splice two different games into one chunk, so we chunk on markdown headers — each pattern
+# and each WHOLE exemplar stays a coherent, independently-retrievable unit.
+class HeaderChunking(ChunkingStrategy):
+    def chunk(self, document):
+        content = document.content or ""
+        sections = [s.strip() for s in re.split(r"(?m)^(?=#{2,3}\s)", content) if s.strip()]
+        if not sections:
+            return [document]
+        chunks = []
+        for i, sec in enumerate(sections, start=1):
+            meta = document.meta_data.copy()
+            meta["chunk"] = i
+            meta["chunk_size"] = len(sec)
+            chunks.append(Document(
+                id=self._generate_chunk_id(document, i, sec),
+                name=document.name, meta_data=meta, content=sec,
+            ))
+        return chunks
+
 game_knowledge = Knowledge(
     vector_db=LanceDb(
         uri=LANCEDB_URI,
@@ -51,10 +85,17 @@ game_knowledge = Knowledge(
         search_type=SearchType.vector,
         embedder=game_embedder,
     ),
+    max_results=6,  # inject the matching exemplar + the most relevant patterns, not all chunks
 )
-# Embed the patterns once. skip_if_exists avoids re-embedding unchanged content on startup;
-# delete the db/lancedb dir to force a rebuild after you edit game-patterns.txt.
-game_knowledge.insert(name="Game Patterns", path=KNOWLEDGE_FILE, skip_if_exists=True)
+# Embed once, chunked by header so patterns and whole exemplars stay coherent. skip_if_exists
+# avoids re-embedding unchanged content; DELETE db/lancedb to force a rebuild after editing the
+# file OR changing this chunker (the content hash, not the chunker, decides the skip).
+game_knowledge.insert(
+    name="Game Patterns",
+    path=KNOWLEDGE_FILE,
+    reader=TextReader(chunking_strategy=HeaderChunking()),
+    skip_if_exists=True,
+)
 
 # Local SQLite store for per-user chat history + memories. The app passes a stable
 # user_id/session_id (persisted in the browser via gr.BrowserState) into agent.run(),
