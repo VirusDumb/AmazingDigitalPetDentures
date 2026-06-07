@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Top Down Checkpoint Racer</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#10202a;font-family:system-ui,sans-serif}
+canvas{display:block;width:100vw;height:100vh;background:#16313b}
+#hud{position:fixed;left:12px;top:12px;color:white;background:rgba(0,0,0,.38);padding:10px 12px;border-radius:12px;box-shadow:0 8px 24px #0008}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud");
+const keys={},track={x:90,y:70,w:700,h:440},car={x:145,y:285,a:0,v:0,w:18,h:30,lap:0,next:0,time:0,best:null,done:false};
+const cps=[{x:120,y:230,w:80,h:100},{x:410,y:80,w:130,h:70},{x:735,y:250,w:70,h:120},{x:360,y:445,w:140,h:55}];
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}
+addEventListener("resize",resize);resize();
+addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="Space"&&car.done)reset()});
+addEventListener("keyup",e=>keys[e.code]=0);
+function reset(){Object.assign(car,{x:145,y:285,a:0,v:0,lap:0,next:0,time:0,done:false})}
+function insideRoad(x,y){const outer=x>track.x&&x<track.x+track.w&&y>track.y&&y<track.y+track.h;const inner=x>track.x+160&&x<track.x+track.w-160&&y>track.y+120&&y<track.y+track.h-120;return outer&&!inner}
+function inRect(p,r){return p.x>r.x&&p.x<r.x+r.w&&p.y>r.y&&p.y<r.y+r.h}
+function update(dt){
+ if(car.done)return;
+ car.time+=dt;
+ if(keys.ArrowLeft||keys.KeyA)car.a-=2.8*dt;
+ if(keys.ArrowRight||keys.KeyD)car.a+=2.8*dt;
+ if(keys.ArrowUp||keys.KeyW)car.v+=170*dt;
+ if(keys.ArrowDown||keys.KeyS)car.v-=130*dt;
+ car.v*=Math.pow(.25,dt);car.v=Math.max(-90,Math.min(260,car.v));
+ car.x+=Math.sin(car.a)*car.v*dt;car.y-=Math.cos(car.a)*car.v*dt;
+ if(!insideRoad(car.x,car.y)){car.v*=.82;car.x-=Math.sin(car.a)*80*dt;car.y+=Math.cos(car.a)*80*dt}
+ if(inRect(car,cps[car.next])){car.next=(car.next+1)%cps.length;if(car.next===0){car.lap++;car.best=car.time;car.time=0;if(car.lap>=3)car.done=true}}
+}
+function render(){
+ const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);ctx.save();ctx.translate((w-880)/2,(h-580)/2);
+ ctx.fillStyle="#295f47";ctx.fillRect(0,0,880,580);
+ ctx.fillStyle="#38414a";ctx.fillRect(track.x,track.y,track.w,track.h);ctx.fillStyle="#295f47";ctx.fillRect(track.x+160,track.y+120,track.w-320,track.h-240);
+ ctx.strokeStyle="#f6e05e";ctx.lineWidth=4;ctx.strokeRect(cps[car.next].x,cps[car.next].y,cps[car.next].w,cps[car.next].h);
+ for(const [i,c] of cps.entries()){ctx.strokeStyle=i===car.next?"#fff":"#7dd3fc";ctx.lineWidth=2;ctx.strokeRect(c.x,c.y,c.w,c.h)}
+ ctx.save();ctx.translate(car.x,car.y);ctx.rotate(car.a);ctx.fillStyle="#ff4d6d";ctx.fillRect(-car.w/2,-car.h/2,car.w,car.h);ctx.fillStyle="#bff";ctx.fillRect(-5,-10,10,8);ctx.restore();
+ ctx.restore();hud.textContent=car.done?`Champion! 3 laps in ${car.best?.toFixed(1)}s. Space to retry.`:`Laps ${car.lap}/3 | Gate ${car.next+1}/4 | Speed ${Math.round(car.v)} | Time ${car.time.toFixed(1)}`;
+}
+let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>

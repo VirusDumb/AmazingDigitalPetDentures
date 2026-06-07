@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Raycaster FPS</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#111;font-family:system-ui,sans-serif}canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud"),keys={};
+const map=["1111111111","1000000001","1011110101","1001000101","1001000001","1001111101","1000000001","1010111101","10000000E1","1111111111"],P={x:1.5,y:1.5,a:0,ammo:6,enemy:true,win:false,dead:false};
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}addEventListener("resize",resize);resize();
+addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="Space")shoot();if(e.code==="KeyR"&&(P.win||P.dead))location.reload()});addEventListener("keyup",e=>keys[e.code]=0);
+function wall(x,y){return map[Math.floor(y)]?.[Math.floor(x)]==="1"}function cell(x,y){return map[Math.floor(y)]?.[Math.floor(x)]||"1"}
+function shoot(){if(P.win||P.dead||P.ammo<=0)return;P.ammo--;let ex=8.5,ey=8.5,ang=Math.atan2(ey-P.y,ex-P.x);if(P.enemy&&Math.abs(Math.atan2(Math.sin(ang-P.a),Math.cos(ang-P.a)))<.18){P.enemy=false}}
+function update(dt){if(P.win||P.dead)return;P.a+=((keys.ArrowRight||keys.KeyD?1:0)-(keys.ArrowLeft||keys.KeyA?1:0))*2.5*dt;let sp=((keys.ArrowUp||keys.KeyW?1:0)-(keys.ArrowDown||keys.KeyS?1:0))*2.4*dt,nx=P.x+Math.cos(P.a)*sp,ny=P.y+Math.sin(P.a)*sp;if(!wall(nx,P.y))P.x=nx;if(!wall(P.x,ny))P.y=ny;if(cell(P.x,P.y)==="E"&&!P.enemy)P.win=true;if(P.enemy&&Math.hypot(P.x-8.5,P.y-8.5)<.45)P.dead=true}
+function cast(ang){let dist=0;while(dist<12){dist+=.025;let x=P.x+Math.cos(ang)*dist,y=P.y+Math.sin(ang)*dist;if(wall(x,y))return dist}return 12}
+function render(){const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);ctx.fillStyle="#172033";ctx.fillRect(0,0,w,h/2);ctx.fillStyle="#2b2018";ctx.fillRect(0,h/2,w,h/2);for(let x=0;x<w;x+=3){const ang=P.a-.55+x/w*1.1,d=cast(ang),hh=Math.min(h, h/(d*Math.cos(ang-P.a)));ctx.fillStyle=`rgb(${Math.max(40,210-d*18)},${Math.max(40,160-d*12)},${Math.max(50,120-d*9)})`;ctx.fillRect(x,h/2-hh/2,3,hh)}if(P.enemy){const ex=8.5-P.x,ey=8.5-P.y,ea=Math.atan2(ey,ex)-P.a,ed=Math.hypot(ex,ey);if(Math.abs(ea)<.55){const sx=w/2+Math.tan(ea)*w,sz=h/ed;ctx.fillStyle="#ef4444";ctx.fillRect(sx-sz/2,h/2-sz/2,sz,sz)}}ctx.fillStyle="#fff";ctx.fillRect(w/2-8,h/2,16,2);ctx.fillRect(w/2,h/2-8,2,16);ctx.save();ctx.scale(5,5);for(let y=0;y<map.length;y++)for(let x=0;x<map[y].length;x++){ctx.fillStyle=map[y][x]==="1"?"#94a3b8":map[y][x]==="E"?"#22c55e":"#111827";ctx.fillRect(x,y,1,1)}ctx.fillStyle="#38bdf8";ctx.fillRect(P.x-.15,P.y-.15,.3,.3);ctx.restore();hud.textContent=P.win?"Exit secured. R to retry.":P.dead?"Caught. R to retry.":`Ammo ${P.ammo} | WASD/arrows move | Space shoots red guard, then reach green exit`}
+let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>

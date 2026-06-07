@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pseudo 3D Road Racer</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#78b7ff;font-family:system-ui,sans-serif}
+canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:#fff;background:#0008;padding:10px 12px;border-radius:12px}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud");
+const keys={},road=[],player={x:0,speed:0,z:0,score:0,goal:9000,done:false};
+for(let i=0;i<700;i++)road.push({curve:Math.sin(i*.045)*1.8+(i>250&&i<380?2.2:0),hill:Math.sin(i*.033)*70});
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}
+addEventListener("resize",resize);resize();addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="Space"&&player.done)reset()});addEventListener("keyup",e=>keys[e.code]=0);
+function reset(){Object.assign(player,{x:0,speed:0,z:0,score:0,done:false})}
+function update(dt){if(player.done)return;if(keys.ArrowUp||keys.KeyW)player.speed+=900*dt;else player.speed-=300*dt;if(keys.ArrowDown||keys.KeyS)player.speed-=700*dt;player.speed=Math.max(0,Math.min(1900,player.speed));const steer=(keys.ArrowRight||keys.KeyD?1:0)-(keys.ArrowLeft||keys.KeyA?1:0);player.x+=steer*dt*(1+player.speed/420);player.z+=player.speed*dt;player.score=Math.max(player.score,player.z);if(Math.abs(player.x)>1.08)player.speed*=.965;if(player.z>=player.goal)player.done=true}
+function segment(i){return road[Math.floor(i)%road.length]}
+function render(){
+ const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);ctx.fillStyle="#79c8ff";ctx.fillRect(0,0,w,h*.48);ctx.fillStyle="#4f9b45";ctx.fillRect(0,h*.48,w,h*.52);
+ let base=Math.floor(player.z/80),camX=player.x,dx=0,x=0,prevY=h,prevW=w;
+ for(let n=0;n<90;n++){const seg=segment(base+n),scale=1/(n*.055+1),y=h*.88-scale*(h*.55+seg.hill),rw=scale*w*.88,mid=w/2+(x-camX*900)*scale;dx+=seg.curve;x+=dx;
+  ctx.fillStyle=n%2?"#3f3f46":"#52525b";ctx.beginPath();ctx.moveTo(mid-rw,y);ctx.lineTo(mid+rw,y);ctx.lineTo(w/2+prevW,prevY);ctx.lineTo(w/2-prevW,prevY);ctx.fill();
+  ctx.fillStyle="#f8fafc";ctx.fillRect(mid-rw*.04,y,rw*.08,Math.max(2,(prevY-y)*.18));
+  if(n%12===0){ctx.fillStyle="#dc2626";ctx.fillRect(mid-rw*1.2,y-30*scale,22*scale,50*scale);ctx.fillStyle="#fff";ctx.fillRect(mid+rw*1.15,y-25*scale,30*scale,30*scale)}
+  prevY=y;prevW=rw}
+ ctx.save();ctx.translate(w/2,h*.82);ctx.fillStyle="#ef4444";ctx.beginPath();ctx.moveTo(0,-45);ctx.lineTo(42,34);ctx.lineTo(-42,34);ctx.fill();ctx.fillStyle="#111";ctx.fillRect(-55,18,28,18);ctx.fillRect(27,18,28,18);ctx.restore();
+ hud.textContent=player.done?`Finish! Score ${Math.round(player.score)}. Space to retry.`:`Speed ${Math.round(player.speed)} | Distance ${Math.round(player.z)}/${player.goal} | Stay off the grass`;
+}
+let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>

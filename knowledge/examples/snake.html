@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Snake</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#08111f;font-family:system-ui,sans-serif}canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud");
+const cols=24,rows=18,cell=28;let snake,dir,next,food,score,dead,won,timer,step;
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}addEventListener("resize",resize);resize();
+function reset(){snake=[{x:5,y:9},{x:4,y:9},{x:3,y:9}];dir={x:1,y:0};next={x:1,y:0};score=0;dead=false;won=false;timer=0;step=.15;placeFood()}
+function placeFood(){do{food={x:Math.floor(Math.random()*cols),y:Math.floor(Math.random()*rows)}}while(snake.some(s=>s.x===food.x&&s.y===food.y))}
+addEventListener("keydown",e=>{if(e.code==="Space"&&(dead||won))reset();const m={ArrowUp:{x:0,y:-1},KeyW:{x:0,y:-1},ArrowDown:{x:0,y:1},KeyS:{x:0,y:1},ArrowLeft:{x:-1,y:0},KeyA:{x:-1,y:0},ArrowRight:{x:1,y:0},KeyD:{x:1,y:0}}[e.code];if(m&&!(m.x===-dir.x&&m.y===-dir.y))next=m});
+function tick(){dir=next;const head={x:snake[0].x+dir.x,y:snake[0].y+dir.y};if(head.x<0||head.y<0||head.x>=cols||head.y>=rows||snake.some(s=>s.x===head.x&&s.y===head.y)){dead=true;return}snake.unshift(head);if(head.x===food.x&&head.y===food.y){score++;step=Math.max(.06,step*.96);if(score>=12)won=true;else placeFood()}else snake.pop()}
+function update(dt){if(dead||won)return;timer+=dt;while(timer>step){timer-=step;tick()}}
+function render(){const ox=(innerWidth-cols*cell)/2,oy=(innerHeight-rows*cell)/2;ctx.clearRect(0,0,innerWidth,innerHeight);ctx.fillStyle="#111827";ctx.fillRect(ox,oy,cols*cell,rows*cell);ctx.fillStyle="#f43f5e";ctx.fillRect(ox+food.x*cell+5,oy+food.y*cell+5,cell-10,cell-10);snake.forEach((s,i)=>{ctx.fillStyle=i?"#22c55e":"#86efac";ctx.fillRect(ox+s.x*cell+3,oy+s.y*cell+3,cell-6,cell-6)});hud.textContent=won?"Snake charmer! Space to retry.":dead?"Bonked. Space to retry.":`Score ${score}/12 | Arrows/WASD`}
+let last=performance.now();reset();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>

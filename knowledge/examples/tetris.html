@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Tetris Mini</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#0f172a;font-family:system-ui,sans-serif}canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud"),W=10,H=20,S=26;
+const shapes=[[[1,1,1,1]],[[1,1],[1,1]],[[0,1,0],[1,1,1]],[[1,0,0],[1,1,1]],[[0,0,1],[1,1,1]],[[1,1,0],[0,1,1]],[[0,1,1],[1,1,0]]],colors=["#67e8f9","#fde047","#c084fc","#60a5fa","#fb923c","#f87171","#4ade80"];
+let board,piece,next,score,lines,drop,dead,won;
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}addEventListener("resize",resize);resize();
+function cloneShape(s){return s.map(r=>r.slice())}function makePiece(){const id=Math.floor(Math.random()*shapes.length);return{x:3,y:0,m:cloneShape(shapes[id]),c:colors[id]}}
+function reset(){board=Array.from({length:H},()=>Array(W).fill(0));score=0;lines=0;drop=0;dead=false;won=false;piece=makePiece();next=makePiece()}
+function hit(p,ox=0,oy=0,m=p.m){return m.some((r,y)=>r.some((v,x)=>v&&(p.x+x+ox<0||p.x+x+ox>=W||p.y+y+oy>=H||board[p.y+y+oy]?.[p.x+x+ox])))}
+function lock(){piece.m.forEach((r,y)=>r.forEach((v,x)=>{if(v){if(piece.y+y<0)dead=true;else board[piece.y+y][piece.x+x]=piece.c}}));for(let y=H-1;y>=0;y--)if(board[y].every(Boolean)){board.splice(y,1);board.unshift(Array(W).fill(0));score+=100;lines++;y++}if(lines>=8)won=true;piece=next;next=makePiece();if(hit(piece))dead=true}
+function rot(m){return m[0].map((_,x)=>m.map(r=>r[x]).reverse())}
+addEventListener("keydown",e=>{if(e.code==="Space"&&(dead||won))reset();if(dead||won)return;if(e.code==="ArrowLeft"&&!hit(piece,-1,0))piece.x--;if(e.code==="ArrowRight"&&!hit(piece,1,0))piece.x++;if(e.code==="ArrowDown"&&!hit(piece,0,1))piece.y++;if(e.code==="ArrowUp"){const r=rot(piece.m);if(!hit(piece,0,0,r))piece.m=r}});
+function update(dt){if(dead||won)return;drop+=dt;if(drop>.55){drop=0;if(hit(piece,0,1))lock();else piece.y++}}
+function block(x,y,c){ctx.fillStyle=c;ctx.fillRect(x*S,y*S,S-2,S-2)}
+function render(){ctx.clearRect(0,0,innerWidth,innerHeight);const ox=(innerWidth-W*S)/2,oy=(innerHeight-H*S)/2;ctx.save();ctx.translate(ox,oy);ctx.fillStyle="#1e293b";ctx.fillRect(0,0,W*S,H*S);board.forEach((r,y)=>r.forEach((c,x)=>c&&block(x,y,c)));piece.m.forEach((r,y)=>r.forEach((v,x)=>v&&block(piece.x+x,piece.y+y,piece.c)));ctx.restore();hud.textContent=won?"Line lord! Space to retry.":dead?"Stacked out. Space to retry.":`Score ${score} | Lines ${lines}/8 | Arrows move/rotate`}
+let last=performance.now();reset();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>

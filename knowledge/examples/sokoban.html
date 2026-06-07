@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sokoban Mini</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#101827;font-family:system-ui,sans-serif}canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud"),S=42;
+const base=["########","#..G...#","#..B...#","#.PB.G.#","#..B...#","#...G..#","########"];
+let map,player,boxes,goals,moves,won;
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}addEventListener("resize",resize);resize();
+function reset(){map=base.map(r=>r.replace(/[PBG]/g,".").split(""));boxes=[];goals=[];moves=0;won=false;base.forEach((r,y)=>[...r].forEach((ch,x)=>{if(ch==="P")player={x,y};if(ch==="B")boxes.push({x,y});if(ch==="G")goals.push({x,y})}))}
+function boxAt(x,y){return boxes.find(b=>b.x===x&&b.y===y)}function wall(x,y){return map[y]?.[x]==="#"}function goal(x,y){return goals.some(g=>g.x===x&&g.y===y)}
+function move(dx,dy){if(won)return;const nx=player.x+dx,ny=player.y+dy,b=boxAt(nx,ny);if(wall(nx,ny))return;if(b){const bx=b.x+dx,by=b.y+dy;if(wall(bx,by)||boxAt(bx,by))return;b.x=bx;b.y=by}player.x=nx;player.y=ny;moves++;won=boxes.every(b=>goal(b.x,b.y))}
+addEventListener("keydown",e=>{if(e.code==="Space")reset();const d={ArrowUp:[0,-1],KeyW:[0,-1],ArrowDown:[0,1],KeyS:[0,1],ArrowLeft:[-1,0],KeyA:[-1,0],ArrowRight:[1,0],KeyD:[1,0]}[e.code];if(d)move(d[0],d[1])});
+function update(){}
+function render(){ctx.clearRect(0,0,innerWidth,innerHeight);const ox=(innerWidth-map[0].length*S)/2,oy=(innerHeight-map.length*S)/2;ctx.save();ctx.translate(ox,oy);for(let y=0;y<map.length;y++)for(let x=0;x<map[y].length;x++){ctx.fillStyle=wall(x,y)?"#334155":"#1e293b";ctx.fillRect(x*S,y*S,S-2,S-2);if(goal(x,y)){ctx.fillStyle="#facc15";ctx.beginPath();ctx.arc(x*S+S/2,y*S+S/2,9,0,7);ctx.fill()}}for(const b of boxes){ctx.fillStyle=goal(b.x,b.y)?"#22c55e":"#fb923c";ctx.fillRect(b.x*S+7,b.y*S+7,S-14,S-14)}ctx.fillStyle="#38bdf8";ctx.fillRect(player.x*S+9,player.y*S+6,S-18,S-12);ctx.restore();hud.textContent=won?`All crates parked in ${moves} moves. Space resets.`:`Moves ${moves} | Push boxes onto gold dots | Space reset`}
+let last=performance.now();reset();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>

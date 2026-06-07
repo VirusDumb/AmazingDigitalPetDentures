@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Three Obstacle Runner</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#111827;font-family:system-ui,sans-serif}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="hud"></div>
+<script type="module">
+import * as THREE from "three";
+const hud=document.getElementById("hud"),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,300),renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);document.body.appendChild(renderer.domElement);scene.background=new THREE.Color(0x111827);scene.add(new THREE.HemisphereLight(0xffffff,0x334155,2));
+const runner=new THREE.Mesh(new THREE.BoxGeometry(.7,1,.7),new THREE.MeshStandardMaterial({color:0x38bdf8}));runner.position.set(0,.5,3);scene.add(runner);
+const floor=new THREE.Mesh(new THREE.BoxGeometry(7,.1,220),new THREE.MeshStandardMaterial({color:0x334155}));floor.position.z=-70;scene.add(floor);
+const lanes=[-2,0,2],objs=[];let lane=1,score=0,hp=3,done=false,speed=15,spawn=0;const keys={};
+addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="ArrowLeft"||e.code==="KeyA")lane=Math.max(0,lane-1);if(e.code==="ArrowRight"||e.code==="KeyD")lane=Math.min(2,lane+1);if(e.code==="Space"&&done)location.reload()});addEventListener("keyup",e=>keys[e.code]=0);addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+function addObj(){const good=Math.random()<.35,size=good ? .6 : 1,o=new THREE.Mesh(new THREE.BoxGeometry(size,size,size),new THREE.MeshStandardMaterial({color:good?0xfacc15:0xef4444}));o.userData.good=good;o.position.set(lanes[Math.floor(Math.random()*3)],.5,-80);scene.add(o);objs.push(o)}
+function update(dt){if(done)return;spawn-=dt;if(spawn<=0){spawn=.55;addObj()}runner.position.x+=(lanes[lane]-runner.position.x)*12*dt;for(const o of objs){o.position.z+=speed*dt;o.rotation.x+=dt;o.rotation.y+=dt;if(o.position.z>6){scene.remove(o);o.userData.remove=true}else if(!o.userData.hit&&o.position.distanceTo(runner.position)<.9){o.userData.hit=true;o.visible=false;if(o.userData.good)score++;else hp--;if(hp<=0||score>=12)done=true}}for(let i=objs.length-1;i>=0;i--)if(objs[i].userData.remove)objs.splice(i,1);speed+=dt*.45;camera.position.set(0,4.2,8);camera.lookAt(runner.position.x,.5,-10)}
+let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);renderer.render(scene,camera);hud.textContent=score>=12?"Treasure run complete! Space to retry.":hp<=0?"Tripped out. Space to retry.":`Gems ${score}/12 | Health ${hp} | A/D or arrows change lanes`;requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>

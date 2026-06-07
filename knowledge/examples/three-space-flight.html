@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Three Space Flight</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="hud"></div>
+<script type="module">
+import * as THREE from "three";
+const hud=document.getElementById("hud"),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.1,1200),renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);document.body.appendChild(renderer.domElement);
+scene.add(new THREE.AmbientLight(0x88aaff,.8));const light=new THREE.PointLight(0xffffff,2);light.position.set(0,8,8);scene.add(light);
+const ship=new THREE.Mesh(new THREE.ConeGeometry(.35,1.1,4),new THREE.MeshStandardMaterial({color:0x66e3ff,emissive:0x114466}));ship.rotation.x=Math.PI/2;scene.add(ship);
+const stars=new THREE.Group();for(let i=0;i<260;i++){const s=new THREE.Mesh(new THREE.SphereGeometry(.025,6,6),new THREE.MeshBasicMaterial({color:0xffffff}));s.position.set((Math.random()-.5)*80,(Math.random()-.5)*50,-Math.random()*260);stars.add(s)}scene.add(stars);
+const rings=[],rocks=[];for(let i=1;i<=8;i++){const r=new THREE.Mesh(new THREE.TorusGeometry(1.5,.08,8,32),new THREE.MeshBasicMaterial({color:0xfacc15}));r.position.set(Math.sin(i)*6,Math.cos(i*.7)*3,-i*28);scene.add(r);rings.push(r)}for(let i=0;i<28;i++){const a=new THREE.Mesh(new THREE.DodecahedronGeometry(.5+Math.random()*.8),new THREE.MeshStandardMaterial({color:0x777777}));a.position.set((Math.random()-.5)*16,(Math.random()-.5)*8,-10-Math.random()*230);scene.add(a);rocks.push(a)}
+const keys={};let score=0,health=3,done=false;addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="Space"&&done)location.reload()});addEventListener("keyup",e=>keys[e.code]=0);addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+function update(dt){if(done)return;ship.position.x+=((keys.ArrowRight||keys.KeyD?1:0)-(keys.ArrowLeft||keys.KeyA?1:0))*8*dt;ship.position.y+=((keys.ArrowUp||keys.KeyW?1:0)-(keys.ArrowDown||keys.KeyS?1:0))*6*dt;ship.position.x=Math.max(-8,Math.min(8,ship.position.x));ship.position.y=Math.max(-5,Math.min(5,ship.position.y));for(const o of [...rings,...rocks]){o.position.z+=18*dt;if(o.position.z>6)o.position.z-=240;o.rotation.x+=dt;o.rotation.y+=dt*.7}for(const r of rings)if(r.visible&&r.position.distanceTo(ship.position)<1.6){r.visible=false;score++}for(const a of rocks)if(a.position.distanceTo(ship.position)<.8){health--;a.position.z=-230;if(health<=0)done=true}if(score>=8)done=true;camera.position.set(ship.position.x*.25,ship.position.y*.25,6);camera.lookAt(ship.position.x,ship.position.y,-8)}
+let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);renderer.render(scene,camera);hud.textContent=score>=8?"All rings cleared! Space to retry.":health<=0?"Hull breached. Space to retry.":`Rings ${score}/8 | Hull ${health} | WASD/arrows fly`;requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>

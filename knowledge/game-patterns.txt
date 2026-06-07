@@ -558,3 +558,386 @@ function stopGame() {
 - three.js CDN module imports need a correct `type="importmap"` plus `type="module"`.
 - Use simple AABB/circle collision first. Skip polygon collision, broad-phase trees, and heavy physics unless the game truly needs them.
 - Clean up listeners and animation frames before replacing/restarting a game.
+
+## Complete Compact Game Exemplars
+
+These are complete, compact, testable single-file games. Retrieve one by genre, then adapt its structure rather than inventing the engine from scratch. Each example has one game loop, visible HUD, controls, a goal, and retry behavior. Standalone copies live in `knowledge/examples/`.
+
+### Top-Down Checkpoint Racer
+
+Use when: Use when the user asks for 2D racing, checkpoint runs, lap timers, or arcade car handling.
+
+```html
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Top Down Checkpoint Racer</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#10202a;font-family:system-ui,sans-serif}
+canvas{display:block;width:100vw;height:100vh;background:#16313b}
+#hud{position:fixed;left:12px;top:12px;color:white;background:rgba(0,0,0,.38);padding:10px 12px;border-radius:12px;box-shadow:0 8px 24px #0008}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud");
+const keys={},track={x:90,y:70,w:700,h:440},car={x:145,y:285,a:0,v:0,w:18,h:30,lap:0,next:0,time:0,best:null,done:false};
+const cps=[{x:120,y:230,w:80,h:100},{x:410,y:80,w:130,h:70},{x:735,y:250,w:70,h:120},{x:360,y:445,w:140,h:55}];
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}
+addEventListener("resize",resize);resize();
+addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="Space"&&car.done)reset()});
+addEventListener("keyup",e=>keys[e.code]=0);
+function reset(){Object.assign(car,{x:145,y:285,a:0,v:0,lap:0,next:0,time:0,done:false})}
+function insideRoad(x,y){const outer=x>track.x&&x<track.x+track.w&&y>track.y&&y<track.y+track.h;const inner=x>track.x+160&&x<track.x+track.w-160&&y>track.y+120&&y<track.y+track.h-120;return outer&&!inner}
+function inRect(p,r){return p.x>r.x&&p.x<r.x+r.w&&p.y>r.y&&p.y<r.y+r.h}
+function update(dt){
+ if(car.done)return;
+ car.time+=dt;
+ if(keys.ArrowLeft||keys.KeyA)car.a-=2.8*dt;
+ if(keys.ArrowRight||keys.KeyD)car.a+=2.8*dt;
+ if(keys.ArrowUp||keys.KeyW)car.v+=170*dt;
+ if(keys.ArrowDown||keys.KeyS)car.v-=130*dt;
+ car.v*=Math.pow(.25,dt);car.v=Math.max(-90,Math.min(260,car.v));
+ car.x+=Math.sin(car.a)*car.v*dt;car.y-=Math.cos(car.a)*car.v*dt;
+ if(!insideRoad(car.x,car.y)){car.v*=.82;car.x-=Math.sin(car.a)*80*dt;car.y+=Math.cos(car.a)*80*dt}
+ if(inRect(car,cps[car.next])){car.next=(car.next+1)%cps.length;if(car.next===0){car.lap++;car.best=car.time;car.time=0;if(car.lap>=3)car.done=true}}
+}
+function render(){
+ const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);ctx.save();ctx.translate((w-880)/2,(h-580)/2);
+ ctx.fillStyle="#295f47";ctx.fillRect(0,0,880,580);
+ ctx.fillStyle="#38414a";ctx.fillRect(track.x,track.y,track.w,track.h);ctx.fillStyle="#295f47";ctx.fillRect(track.x+160,track.y+120,track.w-320,track.h-240);
+ ctx.strokeStyle="#f6e05e";ctx.lineWidth=4;ctx.strokeRect(cps[car.next].x,cps[car.next].y,cps[car.next].w,cps[car.next].h);
+ for(const [i,c] of cps.entries()){ctx.strokeStyle=i===car.next?"#fff":"#7dd3fc";ctx.lineWidth=2;ctx.strokeRect(c.x,c.y,c.w,c.h)}
+ ctx.save();ctx.translate(car.x,car.y);ctx.rotate(car.a);ctx.fillStyle="#ff4d6d";ctx.fillRect(-car.w/2,-car.h/2,car.w,car.h);ctx.fillStyle="#bff";ctx.fillRect(-5,-10,10,8);ctx.restore();
+ ctx.restore();hud.textContent=car.done?`Champion! 3 laps in ${car.best?.toFixed(1)}s. Space to retry.`:`Laps ${car.lap}/3 | Gate ${car.next+1}/4 | Speed ${Math.round(car.v)} | Time ${car.time.toFixed(1)}`;
+}
+let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+```
+
+Model should copy: Copy the road membership test, checkpoint progression, collision slowdown, and car transform rendering.
+
+### Pseudo-3D Road Racer
+
+Use when: Use when the user asks for OutRun-style racing, fast road games, horizon projection, or retro driving.
+
+```html
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pseudo 3D Road Racer</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#78b7ff;font-family:system-ui,sans-serif}
+canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:#fff;background:#0008;padding:10px 12px;border-radius:12px}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud");
+const keys={},road=[],player={x:0,speed:0,z:0,score:0,goal:9000,done:false};
+for(let i=0;i<700;i++)road.push({curve:Math.sin(i*.045)*1.8+(i>250&&i<380?2.2:0),hill:Math.sin(i*.033)*70});
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}
+addEventListener("resize",resize);resize();addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="Space"&&player.done)reset()});addEventListener("keyup",e=>keys[e.code]=0);
+function reset(){Object.assign(player,{x:0,speed:0,z:0,score:0,done:false})}
+function update(dt){if(player.done)return;if(keys.ArrowUp||keys.KeyW)player.speed+=900*dt;else player.speed-=300*dt;if(keys.ArrowDown||keys.KeyS)player.speed-=700*dt;player.speed=Math.max(0,Math.min(1900,player.speed));const steer=(keys.ArrowRight||keys.KeyD?1:0)-(keys.ArrowLeft||keys.KeyA?1:0);player.x+=steer*dt*(1+player.speed/420);player.z+=player.speed*dt;player.score=Math.max(player.score,player.z);if(Math.abs(player.x)>1.08)player.speed*=.965;if(player.z>=player.goal)player.done=true}
+function segment(i){return road[Math.floor(i)%road.length]}
+function render(){
+ const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);ctx.fillStyle="#79c8ff";ctx.fillRect(0,0,w,h*.48);ctx.fillStyle="#4f9b45";ctx.fillRect(0,h*.48,w,h*.52);
+ let base=Math.floor(player.z/80),camX=player.x,dx=0,x=0,prevY=h,prevW=w;
+ for(let n=0;n<90;n++){const seg=segment(base+n),scale=1/(n*.055+1),y=h*.88-scale*(h*.55+seg.hill),rw=scale*w*.88,mid=w/2+(x-camX*900)*scale;dx+=seg.curve;x+=dx;
+  ctx.fillStyle=n%2?"#3f3f46":"#52525b";ctx.beginPath();ctx.moveTo(mid-rw,y);ctx.lineTo(mid+rw,y);ctx.lineTo(w/2+prevW,prevY);ctx.lineTo(w/2-prevW,prevY);ctx.fill();
+  ctx.fillStyle="#f8fafc";ctx.fillRect(mid-rw*.04,y,rw*.08,Math.max(2,(prevY-y)*.18));
+  if(n%12===0){ctx.fillStyle="#dc2626";ctx.fillRect(mid-rw*1.2,y-30*scale,22*scale,50*scale);ctx.fillStyle="#fff";ctx.fillRect(mid+rw*1.15,y-25*scale,30*scale,30*scale)}
+  prevY=y;prevW=rw}
+ ctx.save();ctx.translate(w/2,h*.82);ctx.fillStyle="#ef4444";ctx.beginPath();ctx.moveTo(0,-45);ctx.lineTo(42,34);ctx.lineTo(-42,34);ctx.fill();ctx.fillStyle="#111";ctx.fillRect(-55,18,28,18);ctx.fillRect(27,18,28,18);ctx.restore();
+ hud.textContent=player.done?`Finish! Score ${Math.round(player.score)}. Space to retry.`:`Speed ${Math.round(player.speed)} | Distance ${Math.round(player.z)}/${player.goal} | Stay off the grass`;
+}
+let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+```
+
+Model should copy: Copy the segment projection loop, curve accumulation, speed/distance goal, and roadside sprite pattern.
+
+### Canvas Tile Platformer
+
+Use when: Use when the user asks for platformers, jumping, coins, hazards, tile maps, or side-view adventures.
+
+```html
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Canvas Platformer</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#162033;font-family:system-ui,sans-serif}canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud"),keys={};
+const T=32,map=[
+"1111111111111111111111111",
+"1000000000000000000000001",
+"1000000000000000000000G01",
+"1000111000001110000011111",
+"100000000C000000000000001",
+"1000001111110000011100001",
+"100C000000000000000000001",
+"111100000000C000111100001",
+"1000000001111110000000001",
+"100000H00000000000000C001",
+"1001111111000000111110001",
+"1000000000000000000000001",
+"1111111111111111111111111"];
+const player={x:48,y:300,w:24,h:28,vx:0,vy:0,onGround:false,coins:0,win:false,dead:false};
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}addEventListener("resize",resize);resize();
+addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="Space"&&(player.dead||player.win))location.reload()});addEventListener("keyup",e=>keys[e.code]=0);
+function tile(x,y){return map[Math.floor(y/T)]?.[Math.floor(x/T)]||"1"}function solid(x,y){return tile(x,y)==="1"}function setTile(px,py,ch){const r=Math.floor(py/T),c=Math.floor(px/T);map[r]=map[r].slice(0,c)+ch+map[r].slice(c+1)}
+function moveAxis(axis,amount){player[axis]+=amount;const pts=[[player.x,player.y],[player.x+player.w,player.y],[player.x,player.y+player.h],[player.x+player.w,player.y+player.h]];if(pts.some(p=>solid(p[0],p[1]))){if(axis==="x"){player.x-=amount;player.vx=0}else{if(amount>0)player.onGround=true;player.y-=amount;player.vy=0}}}
+function update(dt){if(player.dead||player.win)return;player.vx=((keys.ArrowRight||keys.KeyD?1:0)-(keys.ArrowLeft||keys.KeyA?1:0))*210;if((keys.ArrowUp||keys.KeyW)&&player.onGround){player.vy=-520;player.onGround=false}player.vy=Math.min(900,player.vy+1400*dt);moveAxis("x",player.vx*dt);player.onGround=false;moveAxis("y",player.vy*dt);const cx=player.x+player.w/2,cy=player.y+player.h/2,t=tile(cx,cy);if(t==="C"){player.coins++;setTile(cx,cy,"0")}if(t==="H")player.dead=true;if(t==="G"&&player.coins>=4)player.win=true}
+function render(){const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);ctx.save();ctx.translate(Math.min(0,w/2-player.x),Math.min(0,h/2-player.y));for(let r=0;r<map.length;r++)for(let c=0;c<map[r].length;c++){const ch=map[r][c],x=c*T,y=r*T;if(ch==="1"){ctx.fillStyle="#334155";ctx.fillRect(x,y,T,T)}if(ch==="C"){ctx.fillStyle="#fde047";ctx.beginPath();ctx.arc(x+16,y+16,9,0,7);ctx.fill()}if(ch==="H"){ctx.fillStyle="#ef4444";ctx.fillRect(x+4,y+20,24,12)}if(ch==="G"){ctx.fillStyle="#22c55e";ctx.fillRect(x+8,y+4,16,28)}}ctx.fillStyle=player.dead?"#64748b":"#38bdf8";ctx.fillRect(player.x,player.y,player.w,player.h);ctx.restore();hud.textContent=player.win?"You win! Space to retry.":player.dead?"Ouch. Space to retry.":`Coins ${player.coins}/4 | Arrows/WASD, jump with Up/W`;}
+let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+```
+
+Model should copy: Copy axis-separated movement, tile collision, coin pickup mutation, hazard/goal checks, and camera translation.
+
+### Snake Grid Puzzle
+
+Use when: Use when the user asks for Snake, grid growth games, food collection, or simple escalating arcade loops.
+
+```html
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Snake</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#08111f;font-family:system-ui,sans-serif}canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud");
+const cols=24,rows=18,cell=28;let snake,dir,next,food,score,dead,won,timer,step;
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}addEventListener("resize",resize);resize();
+function reset(){snake=[{x:5,y:9},{x:4,y:9},{x:3,y:9}];dir={x:1,y:0};next={x:1,y:0};score=0;dead=false;won=false;timer=0;step=.15;placeFood()}
+function placeFood(){do{food={x:Math.floor(Math.random()*cols),y:Math.floor(Math.random()*rows)}}while(snake.some(s=>s.x===food.x&&s.y===food.y))}
+addEventListener("keydown",e=>{if(e.code==="Space"&&(dead||won))reset();const m={ArrowUp:{x:0,y:-1},KeyW:{x:0,y:-1},ArrowDown:{x:0,y:1},KeyS:{x:0,y:1},ArrowLeft:{x:-1,y:0},KeyA:{x:-1,y:0},ArrowRight:{x:1,y:0},KeyD:{x:1,y:0}}[e.code];if(m&&!(m.x===-dir.x&&m.y===-dir.y))next=m});
+function tick(){dir=next;const head={x:snake[0].x+dir.x,y:snake[0].y+dir.y};if(head.x<0||head.y<0||head.x>=cols||head.y>=rows||snake.some(s=>s.x===head.x&&s.y===head.y)){dead=true;return}snake.unshift(head);if(head.x===food.x&&head.y===food.y){score++;step=Math.max(.06,step*.96);if(score>=12)won=true;else placeFood()}else snake.pop()}
+function update(dt){if(dead||won)return;timer+=dt;while(timer>step){timer-=step;tick()}}
+function render(){const ox=(innerWidth-cols*cell)/2,oy=(innerHeight-rows*cell)/2;ctx.clearRect(0,0,innerWidth,innerHeight);ctx.fillStyle="#111827";ctx.fillRect(ox,oy,cols*cell,rows*cell);ctx.fillStyle="#f43f5e";ctx.fillRect(ox+food.x*cell+5,oy+food.y*cell+5,cell-10,cell-10);snake.forEach((s,i)=>{ctx.fillStyle=i?"#22c55e":"#86efac";ctx.fillRect(ox+s.x*cell+3,oy+s.y*cell+3,cell-6,cell-6)});hud.textContent=won?"Snake charmer! Space to retry.":dead?"Bonked. Space to retry.":`Score ${score}/12 | Arrows/WASD`}
+let last=performance.now();reset();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+```
+
+Model should copy: Copy the fixed-step timer, direction guard against reverse turns, food placement, body growth, and restart flow.
+
+### Tetris Falling Blocks
+
+Use when: Use when the user asks for Tetris, falling block puzzles, rotations, line clears, or score survival games.
+
+```html
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Tetris Mini</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#0f172a;font-family:system-ui,sans-serif}canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud"),W=10,H=20,S=26;
+const shapes=[[[1,1,1,1]],[[1,1],[1,1]],[[0,1,0],[1,1,1]],[[1,0,0],[1,1,1]],[[0,0,1],[1,1,1]],[[1,1,0],[0,1,1]],[[0,1,1],[1,1,0]]],colors=["#67e8f9","#fde047","#c084fc","#60a5fa","#fb923c","#f87171","#4ade80"];
+let board,piece,next,score,lines,drop,dead,won;
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}addEventListener("resize",resize);resize();
+function cloneShape(s){return s.map(r=>r.slice())}function makePiece(){const id=Math.floor(Math.random()*shapes.length);return{x:3,y:0,m:cloneShape(shapes[id]),c:colors[id]}}
+function reset(){board=Array.from({length:H},()=>Array(W).fill(0));score=0;lines=0;drop=0;dead=false;won=false;piece=makePiece();next=makePiece()}
+function hit(p,ox=0,oy=0,m=p.m){return m.some((r,y)=>r.some((v,x)=>v&&(p.x+x+ox<0||p.x+x+ox>=W||p.y+y+oy>=H||board[p.y+y+oy]?.[p.x+x+ox])))}
+function lock(){piece.m.forEach((r,y)=>r.forEach((v,x)=>{if(v){if(piece.y+y<0)dead=true;else board[piece.y+y][piece.x+x]=piece.c}}));for(let y=H-1;y>=0;y--)if(board[y].every(Boolean)){board.splice(y,1);board.unshift(Array(W).fill(0));score+=100;lines++;y++}if(lines>=8)won=true;piece=next;next=makePiece();if(hit(piece))dead=true}
+function rot(m){return m[0].map((_,x)=>m.map(r=>r[x]).reverse())}
+addEventListener("keydown",e=>{if(e.code==="Space"&&(dead||won))reset();if(dead||won)return;if(e.code==="ArrowLeft"&&!hit(piece,-1,0))piece.x--;if(e.code==="ArrowRight"&&!hit(piece,1,0))piece.x++;if(e.code==="ArrowDown"&&!hit(piece,0,1))piece.y++;if(e.code==="ArrowUp"){const r=rot(piece.m);if(!hit(piece,0,0,r))piece.m=r}});
+function update(dt){if(dead||won)return;drop+=dt;if(drop>.55){drop=0;if(hit(piece,0,1))lock();else piece.y++}}
+function block(x,y,c){ctx.fillStyle=c;ctx.fillRect(x*S,y*S,S-2,S-2)}
+function render(){ctx.clearRect(0,0,innerWidth,innerHeight);const ox=(innerWidth-W*S)/2,oy=(innerHeight-H*S)/2;ctx.save();ctx.translate(ox,oy);ctx.fillStyle="#1e293b";ctx.fillRect(0,0,W*S,H*S);board.forEach((r,y)=>r.forEach((c,x)=>c&&block(x,y,c)));piece.m.forEach((r,y)=>r.forEach((v,x)=>v&&block(piece.x+x,piece.y+y,piece.c)));ctx.restore();hud.textContent=won?"Line lord! Space to retry.":dead?"Stacked out. Space to retry.":`Score ${score} | Lines ${lines}/8 | Arrows move/rotate`}
+let last=performance.now();reset();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+```
+
+Model should copy: Copy the board matrix, piece collision, rotation test, lock/clear loop, and game-over detection.
+
+### Sokoban Push Puzzle
+
+Use when: Use when the user asks for crate puzzles, box pushing, warehouse logic, or small deterministic puzzle rooms.
+
+```html
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sokoban Mini</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#101827;font-family:system-ui,sans-serif}canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud"),S=42;
+const base=["########","#..G...#","#..B...#","#.PB.G.#","#..B...#","#...G..#","########"];
+let map,player,boxes,goals,moves,won;
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}addEventListener("resize",resize);resize();
+function reset(){map=base.map(r=>r.replace(/[PBG]/g,".").split(""));boxes=[];goals=[];moves=0;won=false;base.forEach((r,y)=>[...r].forEach((ch,x)=>{if(ch==="P")player={x,y};if(ch==="B")boxes.push({x,y});if(ch==="G")goals.push({x,y})}))}
+function boxAt(x,y){return boxes.find(b=>b.x===x&&b.y===y)}function wall(x,y){return map[y]?.[x]==="#"}function goal(x,y){return goals.some(g=>g.x===x&&g.y===y)}
+function move(dx,dy){if(won)return;const nx=player.x+dx,ny=player.y+dy,b=boxAt(nx,ny);if(wall(nx,ny))return;if(b){const bx=b.x+dx,by=b.y+dy;if(wall(bx,by)||boxAt(bx,by))return;b.x=bx;b.y=by}player.x=nx;player.y=ny;moves++;won=boxes.every(b=>goal(b.x,b.y))}
+addEventListener("keydown",e=>{if(e.code==="Space")reset();const d={ArrowUp:[0,-1],KeyW:[0,-1],ArrowDown:[0,1],KeyS:[0,1],ArrowLeft:[-1,0],KeyA:[-1,0],ArrowRight:[1,0],KeyD:[1,0]}[e.code];if(d)move(d[0],d[1])});
+function update(){}
+function render(){ctx.clearRect(0,0,innerWidth,innerHeight);const ox=(innerWidth-map[0].length*S)/2,oy=(innerHeight-map.length*S)/2;ctx.save();ctx.translate(ox,oy);for(let y=0;y<map.length;y++)for(let x=0;x<map[y].length;x++){ctx.fillStyle=wall(x,y)?"#334155":"#1e293b";ctx.fillRect(x*S,y*S,S-2,S-2);if(goal(x,y)){ctx.fillStyle="#facc15";ctx.beginPath();ctx.arc(x*S+S/2,y*S+S/2,9,0,7);ctx.fill()}}for(const b of boxes){ctx.fillStyle=goal(b.x,b.y)?"#22c55e":"#fb923c";ctx.fillRect(b.x*S+7,b.y*S+7,S-14,S-14)}ctx.fillStyle="#38bdf8";ctx.fillRect(player.x*S+9,player.y*S+6,S-18,S-12);ctx.restore();hud.textContent=won?`All crates parked in ${moves} moves. Space resets.`:`Moves ${moves} | Push boxes onto gold dots | Space reset`}
+let last=performance.now();reset();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+```
+
+Model should copy: Copy the static map parsing, push validation, goal matching, move counter, reset, and win detection.
+
+### Wolfenstein-Style Raycaster FPS
+
+Use when: Use when the user asks for old-school FPS, maze shooters, 2.5D raycasting, or Wolfenstein-like games.
+
+```html
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Raycaster FPS</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#111;font-family:system-ui,sans-serif}canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud"),keys={};
+const map=["1111111111","1000000001","1011110101","1001000101","1001000001","1001111101","1000000001","1010111101","10000000E1","1111111111"],P={x:1.5,y:1.5,a:0,ammo:6,enemy:true,win:false,dead:false};
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}addEventListener("resize",resize);resize();
+addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="Space")shoot();if(e.code==="KeyR"&&(P.win||P.dead))location.reload()});addEventListener("keyup",e=>keys[e.code]=0);
+function wall(x,y){return map[Math.floor(y)]?.[Math.floor(x)]==="1"}function cell(x,y){return map[Math.floor(y)]?.[Math.floor(x)]||"1"}
+function shoot(){if(P.win||P.dead||P.ammo<=0)return;P.ammo--;let ex=8.5,ey=8.5,ang=Math.atan2(ey-P.y,ex-P.x);if(P.enemy&&Math.abs(Math.atan2(Math.sin(ang-P.a),Math.cos(ang-P.a)))<.18){P.enemy=false}}
+function update(dt){if(P.win||P.dead)return;P.a+=((keys.ArrowRight||keys.KeyD?1:0)-(keys.ArrowLeft||keys.KeyA?1:0))*2.5*dt;let sp=((keys.ArrowUp||keys.KeyW?1:0)-(keys.ArrowDown||keys.KeyS?1:0))*2.4*dt,nx=P.x+Math.cos(P.a)*sp,ny=P.y+Math.sin(P.a)*sp;if(!wall(nx,P.y))P.x=nx;if(!wall(P.x,ny))P.y=ny;if(cell(P.x,P.y)==="E"&&!P.enemy)P.win=true;if(P.enemy&&Math.hypot(P.x-8.5,P.y-8.5)<.45)P.dead=true}
+function cast(ang){let dist=0;while(dist<12){dist+=.025;let x=P.x+Math.cos(ang)*dist,y=P.y+Math.sin(ang)*dist;if(wall(x,y))return dist}return 12}
+function render(){const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);ctx.fillStyle="#172033";ctx.fillRect(0,0,w,h/2);ctx.fillStyle="#2b2018";ctx.fillRect(0,h/2,w,h/2);for(let x=0;x<w;x+=3){const ang=P.a-.55+x/w*1.1,d=cast(ang),hh=Math.min(h, h/(d*Math.cos(ang-P.a)));ctx.fillStyle=`rgb(${Math.max(40,210-d*18)},${Math.max(40,160-d*12)},${Math.max(50,120-d*9)})`;ctx.fillRect(x,h/2-hh/2,3,hh)}if(P.enemy){const ex=8.5-P.x,ey=8.5-P.y,ea=Math.atan2(ey,ex)-P.a,ed=Math.hypot(ex,ey);if(Math.abs(ea)<.55){const sx=w/2+Math.tan(ea)*w,sz=h/ed;ctx.fillStyle="#ef4444";ctx.fillRect(sx-sz/2,h/2-sz/2,sz,sz)}}ctx.fillStyle="#fff";ctx.fillRect(w/2-8,h/2,16,2);ctx.fillRect(w/2,h/2-8,2,16);ctx.save();ctx.scale(5,5);for(let y=0;y<map.length;y++)for(let x=0;x<map[y].length;x++){ctx.fillStyle=map[y][x]==="1"?"#94a3b8":map[y][x]==="E"?"#22c55e":"#111827";ctx.fillRect(x,y,1,1)}ctx.fillStyle="#38bdf8";ctx.fillRect(P.x-.15,P.y-.15,.3,.3);ctx.restore();hud.textContent=P.win?"Exit secured. R to retry.":P.dead?"Caught. R to retry.":`Ammo ${P.ammo} | WASD/arrows move | Space shoots red guard, then reach green exit`}
+let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+```
+
+Model should copy: Copy the ray marching renderer, minimap, movement with wall checks, enemy sprite projection, ammo, and exit condition.
+
+### Three.js Space Flight
+
+Use when: Use when the user asks for 3D space, flight, asteroids, ring checkpoints, or chase-camera obstacle games.
+
+```html
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Three Space Flight</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="hud"></div>
+<script type="module">
+import * as THREE from "three";
+const hud=document.getElementById("hud"),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.1,1200),renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);document.body.appendChild(renderer.domElement);
+scene.add(new THREE.AmbientLight(0x88aaff,.8));const light=new THREE.PointLight(0xffffff,2);light.position.set(0,8,8);scene.add(light);
+const ship=new THREE.Mesh(new THREE.ConeGeometry(.35,1.1,4),new THREE.MeshStandardMaterial({color:0x66e3ff,emissive:0x114466}));ship.rotation.x=Math.PI/2;scene.add(ship);
+const stars=new THREE.Group();for(let i=0;i<260;i++){const s=new THREE.Mesh(new THREE.SphereGeometry(.025,6,6),new THREE.MeshBasicMaterial({color:0xffffff}));s.position.set((Math.random()-.5)*80,(Math.random()-.5)*50,-Math.random()*260);stars.add(s)}scene.add(stars);
+const rings=[],rocks=[];for(let i=1;i<=8;i++){const r=new THREE.Mesh(new THREE.TorusGeometry(1.5,.08,8,32),new THREE.MeshBasicMaterial({color:0xfacc15}));r.position.set(Math.sin(i)*6,Math.cos(i*.7)*3,-i*28);scene.add(r);rings.push(r)}for(let i=0;i<28;i++){const a=new THREE.Mesh(new THREE.DodecahedronGeometry(.5+Math.random()*.8),new THREE.MeshStandardMaterial({color:0x777777}));a.position.set((Math.random()-.5)*16,(Math.random()-.5)*8,-10-Math.random()*230);scene.add(a);rocks.push(a)}
+const keys={};let score=0,health=3,done=false;addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="Space"&&done)location.reload()});addEventListener("keyup",e=>keys[e.code]=0);addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+function update(dt){if(done)return;ship.position.x+=((keys.ArrowRight||keys.KeyD?1:0)-(keys.ArrowLeft||keys.KeyA?1:0))*8*dt;ship.position.y+=((keys.ArrowUp||keys.KeyW?1:0)-(keys.ArrowDown||keys.KeyS?1:0))*6*dt;ship.position.x=Math.max(-8,Math.min(8,ship.position.x));ship.position.y=Math.max(-5,Math.min(5,ship.position.y));for(const o of [...rings,...rocks]){o.position.z+=18*dt;if(o.position.z>6)o.position.z-=240;o.rotation.x+=dt;o.rotation.y+=dt*.7}for(const r of rings)if(r.visible&&r.position.distanceTo(ship.position)<1.6){r.visible=false;score++}for(const a of rocks)if(a.position.distanceTo(ship.position)<.8){health--;a.position.z=-230;if(health<=0)done=true}if(score>=8)done=true;camera.position.set(ship.position.x*.25,ship.position.y*.25,6);camera.lookAt(ship.position.x,ship.position.y,-8)}
+let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);renderer.render(scene,camera);hud.textContent=score>=8?"All rings cleared! Space to retry.":health<=0?"Hull breached. Space to retry.":`Rings ${score}/8 | Hull ${health} | WASD/arrows fly`;requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+```
+
+Model should copy: Copy the importmap, starfield, ring/asteroid loops, chase camera, distance collision, and HUD state.
+
+### Canvas Space Shooter
+
+Use when: Use when the user asks for arcade shooters, bullets, enemy waves, survival, or 2D space action.
+
+```html
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Canvas Space Shooter</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#020617;font-family:system-ui,sans-serif}canvas{display:block;width:100vw;height:100vh}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+</head>
+<body>
+<canvas id="game"></canvas><div id="hud"></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d"),hud=document.getElementById("hud"),keys={};
+let ship,bullets,enemies,stars,spawn,wave,score,dead,won,cool;
+function resize(){const d=Math.max(1,devicePixelRatio||1);canvas.width=innerWidth*d;canvas.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0)}addEventListener("resize",resize);resize();
+function reset(){ship={x:innerWidth/2,y:innerHeight-70,w:28,h:34,hp:3};bullets=[];enemies=[];stars=Array.from({length:90},()=>({x:Math.random()*innerWidth,y:Math.random()*innerHeight,s:1+Math.random()*3}));spawn=0;wave=1;score=0;dead=false;won=false;cool=0}
+addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="Space"&&(dead||won))reset()});addEventListener("keyup",e=>keys[e.code]=0);
+function rect(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function update(dt){if(dead||won)return;ship.x+=((keys.ArrowRight||keys.KeyD?1:0)-(keys.ArrowLeft||keys.KeyA?1:0))*320*dt;ship.y+=((keys.ArrowDown||keys.KeyS?1:0)-(keys.ArrowUp||keys.KeyW?1:0))*240*dt;ship.x=Math.max(0,Math.min(innerWidth-ship.w,ship.x));ship.y=Math.max(0,Math.min(innerHeight-ship.h,ship.y));cool-=dt;if((keys.Space||keys.KeyJ)&&cool<=0){cool=.16;bullets.push({x:ship.x+ship.w/2-3,y:ship.y,w:6,h:14})}for(const s of stars){s.y+=s.s*40*dt;if(s.y>innerHeight)s.y=0}for(const b of bullets)b.y-=520*dt;bullets=bullets.filter(b=>b.y>-20);spawn-=dt;if(spawn<=0){spawn=Math.max(.25,1-wave*.1);enemies.push({x:Math.random()*(innerWidth-36),y:-40,w:32,h:28,vy:80+wave*18})}for(const e of enemies)e.y+=e.vy*dt;for(const e of enemies)for(const b of bullets)if(!e.dead&&rect(e,b)){e.dead=true;b.y=-99;score++}for(const e of enemies)if(!e.dead&&rect(e,ship)){e.dead=true;ship.hp--;if(ship.hp<=0)dead=true}enemies=enemies.filter(e=>!e.dead&&e.y<innerHeight+60);wave=1+Math.floor(score/8);if(score>=30)won=true}
+function render(){ctx.clearRect(0,0,innerWidth,innerHeight);ctx.fillStyle="#fff";for(const s of stars)ctx.fillRect(s.x,s.y,2,2);ctx.fillStyle="#38bdf8";ctx.beginPath();ctx.moveTo(ship.x+ship.w/2,ship.y);ctx.lineTo(ship.x+ship.w,ship.y+ship.h);ctx.lineTo(ship.x,ship.y+ship.h);ctx.fill();ctx.fillStyle="#facc15";for(const b of bullets)ctx.fillRect(b.x,b.y,b.w,b.h);ctx.fillStyle="#ef4444";for(const e of enemies)ctx.fillRect(e.x,e.y,e.w,e.h);hud.textContent=won?"Wave cleared! Space to retry.":dead?"Ship lost. Space to retry.":`Score ${score}/30 | Hull ${ship.hp} | WASD/arrows, Space/J fire`}
+let last=performance.now();reset();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+```
+
+Model should copy: Copy the bullet/enemy arrays, spawn timer, collision cleanup, hull/score goals, and starfield background.
+
+### Three.js Lane Obstacle Runner
+
+Use when: Use when the user asks for 3D runners, lane dodging, pickups, obstacles, or forward-motion games.
+
+```html
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Three Obstacle Runner</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#111827;font-family:system-ui,sans-serif}#hud{position:fixed;left:12px;top:12px;color:white;background:#0008;padding:10px 12px;border-radius:12px}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="hud"></div>
+<script type="module">
+import * as THREE from "three";
+const hud=document.getElementById("hud"),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,300),renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);document.body.appendChild(renderer.domElement);scene.background=new THREE.Color(0x111827);scene.add(new THREE.HemisphereLight(0xffffff,0x334155,2));
+const runner=new THREE.Mesh(new THREE.BoxGeometry(.7,1,.7),new THREE.MeshStandardMaterial({color:0x38bdf8}));runner.position.set(0,.5,3);scene.add(runner);
+const floor=new THREE.Mesh(new THREE.BoxGeometry(7,.1,220),new THREE.MeshStandardMaterial({color:0x334155}));floor.position.z=-70;scene.add(floor);
+const lanes=[-2,0,2],objs=[];let lane=1,score=0,hp=3,done=false,speed=15,spawn=0;const keys={};
+addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="ArrowLeft"||e.code==="KeyA")lane=Math.max(0,lane-1);if(e.code==="ArrowRight"||e.code==="KeyD")lane=Math.min(2,lane+1);if(e.code==="Space"&&done)location.reload()});addEventListener("keyup",e=>keys[e.code]=0);addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+function addObj(){const good=Math.random()<.35,size=good ? .6 : 1,o=new THREE.Mesh(new THREE.BoxGeometry(size,size,size),new THREE.MeshStandardMaterial({color:good?0xfacc15:0xef4444}));o.userData.good=good;o.position.set(lanes[Math.floor(Math.random()*3)],.5,-80);scene.add(o);objs.push(o)}
+function update(dt){if(done)return;spawn-=dt;if(spawn<=0){spawn=.55;addObj()}runner.position.x+=(lanes[lane]-runner.position.x)*12*dt;for(const o of objs){o.position.z+=speed*dt;o.rotation.x+=dt;o.rotation.y+=dt;if(o.position.z>6){scene.remove(o);o.userData.remove=true}else if(!o.userData.hit&&o.position.distanceTo(runner.position)<.9){o.userData.hit=true;o.visible=false;if(o.userData.good)score++;else hp--;if(hp<=0||score>=12)done=true}}for(let i=objs.length-1;i>=0;i--)if(objs[i].userData.remove)objs.splice(i,1);speed+=dt*.45;camera.position.set(0,4.2,8);camera.lookAt(runner.position.x,.5,-10)}
+let last=performance.now();function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);renderer.render(scene,camera);hud.textContent=score>=12?"Treasure run complete! Space to retry.":hp<=0?"Tripped out. Space to retry.":`Gems ${score}/12 | Health ${hp} | A/D or arrows change lanes`;requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+```
+
+Model should copy: Copy the lane interpolation, object spawning/recycling, pickup vs obstacle handling, camera setup, and importmap.
+
