@@ -14,7 +14,7 @@ from instructions.toy_maker import toy_maker
 # Space the deps exist, the import succeeds, and ZeroGPU registers the GPU function.
 try:
     from model import generate as model_generate
-except Exception as _model_import_error:  # noqa: F841 — surfaced in logs below
+except Exception:  # surfaced in logs below
     import sys
     import traceback
 
@@ -34,33 +34,69 @@ WELCOME_MESSAGE = [
     {
         "role": "assistant",
         "content": "Hi! I'm the dentures 🦷 — describe anything (a game, a widget, a "
-                   "visualizer, a to-do list…) and I'll build it as a live HTML toy. "
+                   "visualizer, a clock…) and I'll build it as a live HTML toy. "
                    "Hit 🧹 New session to start over.",
     }
 ]
 
+
 # ---- HTML extraction -------------------------------------------------------------------
 _THINK_RE = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
-_DOCTYPE_RE = re.compile(r"<!doctype html.*?</html>", re.IGNORECASE | re.DOTALL)
-_HTML_RE = re.compile(r"<html.*?</html>", re.IGNORECASE | re.DOTALL)
 
 
-def extract_html(reply: str | None) -> tuple[str, str | None]:
-    """Split a model reply into (chat_prose, html_doc_or_None).
+def _strip_fences(text: str) -> str:
+    """Remove ``` code fences but keep their contents."""
+    text = re.sub(r"```[a-zA-Z0-9]*\n?", "", text or "")
+    return text.replace("```", "")
 
-    Strips <think> blocks and ``` fences, then slices out <!doctype…>…</html>
-    (falls back to <html>…</html>). Whatever text is left becomes the chat message.
+
+def best_html(text: str | None) -> str | None:
+    """Slice out the real HTML document: from the LAST <!doctype html> (or <html>) to the
+    LAST </html>. The real doc is generated AFTER any reasoning, so taking the last opener
+    avoids reasoning that merely *mentions* tags (which produced broken fragments before).
     """
-    text = _THINK_RE.sub("", reply or "").strip()
-    # Drop triple-backtick fences but keep their contents.
-    text = re.sub(r"```[a-zA-Z0-9]*\n?", "", text).replace("```", "")
-    match = _DOCTYPE_RE.search(text) or _HTML_RE.search(text)
-    if not match:
-        return (text.strip() or "Hmm, I didn't produce anything that time — try again?"), None
-    html_doc = match.group(0).strip()
-    prose = (text[: match.start()] + " " + text[match.end():]).strip()
-    prose = re.sub(r"\s+", " ", prose).strip()
-    return (prose or "Here's your toy! 🎉"), html_doc
+    if not text:
+        return None
+    low = text.lower()
+    start = low.rfind("<!doctype html")
+    if start == -1:
+        start = low.rfind("<html")
+    if start == -1:
+        return None
+    end = low.rfind("</html>")
+    if end == -1 or end <= start:
+        return None
+    doc = text[start:end + len("</html>")].strip()
+    return doc if len(doc) >= 120 else None  # too-short => a mention, not a document
+
+
+def parse_reply(content: str, reasoning: str) -> tuple[str, str, str | None]:
+    """Split a raw model reply into (thinking, prose, html_doc_or_None)."""
+    content = _strip_fences(_THINK_RE.sub("", content or "")).strip()
+    reasoning = (reasoning or "").strip()
+    doc = best_html(content)
+
+    if doc:
+        before = content[: content.find(doc)].strip()
+        if reasoning:
+            # Reasoning came cleanly separated, so `before` is just the friendly sentence.
+            thinking, prose = reasoning, (before or "Here's your toy! 🎉")
+        else:
+            # Reasoning is mixed into content — everything before the doc is thinking.
+            thinking, prose = before, "Here's your toy! 🎉"
+        return thinking.strip(), (prose.strip() or "Here's your toy! 🎉"), doc
+
+    # No complete document this turn.
+    if reasoning:
+        return reasoning, (content or "I couldn't finish that — try again?"), None
+    return content, "I couldn't produce a complete toy that time — try rephrasing?", None
+
+
+def answer_markdown(prose: str, doc: str | None) -> str:
+    """The assistant chat bubble: the friendly line + the full HTML as a code block."""
+    if doc:
+        return f"{prose}\n\n```html\n{doc}\n```"
+    return prose
 
 
 def iframe_for(raw_html: str) -> str:
@@ -96,77 +132,84 @@ def local_reply(message: str) -> str:
     )
 
 
-def run_model(messages: list[dict], user_message: str) -> str:
+def run_model(messages: list[dict], user_message: str) -> dict:
+    """Always returns {"content", "reasoning"}."""
     if model_generate is None:
-        return local_reply(user_message)
+        return {"content": local_reply(user_message), "reasoning": ""}
     try:
-        return model_generate(messages)
+        result = model_generate(messages)
+        if isinstance(result, dict):
+            return {"content": result.get("content", ""), "reasoning": result.get("reasoning", "")}
+        return {"content": str(result), "reasoning": ""}
     except Exception as exc:  # keep the UI alive; surface the error in chat
         import sys
         import traceback
 
         traceback.print_exc(file=sys.stderr)
-        return f"The toy maker hit a snag: {exc}"
+        return {"content": f"The toy maker hit a snag: {exc}", "reasoning": ""}
 
 
-# ---- History helpers (no Agno; convo lives in a BrowserState) ---------------------------
-def to_display(convo: list[dict]) -> list[dict]:
-    """Render the model-facing convo into chatbot messages (assistant = prose only)."""
-    display: list[dict] = []
-    for m in convo:
-        if m.get("role") == "user":
-            display.append({"role": "user", "content": m.get("content", "")})
-        else:
-            prose, _ = extract_html(m.get("content", ""))
-            display.append({"role": "assistant", "content": prose})
-    return display or list(WELCOME_MESSAGE)
+# ---- History (no Agno; convo lives in a BrowserState) ----------------------------------
+def convo_to_history(convo: list[dict]) -> list[dict]:
+    """Rebuild the chatbot from the persisted convo on reload (thinking is live-only)."""
+    history = [{"role": m["role"], "content": m["content"]} for m in convo if m.get("content")]
+    return history or list(WELCOME_MESSAGE)
 
 
 def latest_html(convo: list[dict]) -> str | None:
     for m in reversed(convo):
         if m.get("role") == "assistant":
-            _, doc = extract_html(m.get("content", ""))
+            doc = best_html(_strip_fences(m.get("content", "")))
             if doc:
                 return doc
     return None
 
 
 # ---- Event handlers --------------------------------------------------------------------
-def chat_turn(message: str, convo: list[dict] | None):
+def chat_turn(message: str, history: list[dict] | None, convo: list[dict] | None):
+    history = list(history or [])
     convo = list(convo or [])
     msg = (message or "").strip()
     if not msg:
-        return "", to_display(convo), convo, gr.update(), gr.update(), gr.update()
+        return "", history, convo, gr.update(), gr.update(), gr.update()
 
+    history.append({"role": "user", "content": msg})
     sent = [{"role": "system", "content": toy_maker}] + convo[-MAX_MESSAGES:]
     sent.append({"role": "user", "content": msg})
+
     reply = run_model(sent, msg)
-    prose, html_doc = extract_html(reply)
+    thinking, prose, doc = parse_reply(reply["content"], reply["reasoning"])
 
-    convo = (convo + [
-        {"role": "user", "content": msg},
-        {"role": "assistant", "content": reply},
-    ])[-MAX_MESSAGES:]
-    display = to_display(convo)
+    # Thinking shown as a SEPARATE collapsible bubble (Gradio's metadata accordion).
+    if thinking:
+        history.append({"role": "assistant", "content": thinking,
+                        "metadata": {"title": "🧠 Thinking"}})
+    answer = answer_markdown(prose, doc)
+    history.append({"role": "assistant", "content": answer})
 
-    if html_doc:
-        return ("", display, convo, iframe_for(html_doc),
+    # convo (model context + persistence) keeps the answer only — NOT the thinking.
+    convo.append({"role": "user", "content": msg})
+    convo.append({"role": "assistant", "content": answer})
+    convo = convo[-MAX_MESSAGES:]
+
+    if doc:
+        return ("", history, convo, iframe_for(doc),
                 gr.update(visible=True), gr.update(visible=False))
-    return "", display, convo, gr.update(), gr.update(), gr.update()
+    return "", history, convo, gr.update(), gr.update(), gr.update()
 
 
 def hydrate(convo: list[dict] | None):
     """On page load, restore the chat + last toy from the persisted BrowserState."""
     convo = list(convo or [])
-    display = to_display(convo)
+    history = convo_to_history(convo)
     doc = latest_html(convo)
     if doc:
-        return display, iframe_for(doc), gr.update(visible=True), gr.update(visible=False)
-    return display, empty_preview(), gr.update(visible=False), gr.update(visible=True)
+        return history, iframe_for(doc), gr.update(visible=True), gr.update(visible=False)
+    return history, empty_preview(), gr.update(visible=False), gr.update(visible=True)
 
 
 def new_session():
-    """Clear chat + history + preview and mint a blank session."""
+    """Clear chat + history + preview."""
     return (list(WELCOME_MESSAGE), "", [], empty_preview(),
             gr.update(visible=False), gr.update(visible=True))
 
@@ -366,8 +409,8 @@ def build_app() -> gr.Blocks:
                             )
                         adventure_view = gr.HTML(empty_preview())
 
-            # Persisted in the browser's localStorage: the model-facing conversation
-            # (user turns + assistant turns incl. the full HTML). Survives reloads;
+            # Persisted in the browser's localStorage: the model-facing conversation (user
+            # turns + assistant answers incl. the HTML, NOT the thinking). Survives reloads;
             # more durable than the old ephemeral-disk SQLite. Cleared by "New session".
             convo = gr.BrowserState([], storage_key="adpd_convo")
 
@@ -381,7 +424,7 @@ def build_app() -> gr.Blocks:
 
             chat_io = dict(
                 fn=chat_turn,
-                inputs=[message, convo],
+                inputs=[message, chatbot, convo],
                 outputs=[message, chatbot, convo, adventure_view, adventure_col, open_btn],
             )
             message.submit(**chat_io)
