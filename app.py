@@ -395,7 +395,8 @@ def build_app() -> gr.Blocks:
                                 placeholder="Describe a toy to build...",
                                 lines=1,
                                 max_lines=6,
-                                autofocus=True,
+                                # no autofocus: it scroll-jumps to the input on load, pushing
+                                # the title off the top now that the preview makes the page tall.
                                 show_label=False,
                                 container=False,
                                 scale=8,
