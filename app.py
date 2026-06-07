@@ -231,8 +231,9 @@ def build_app() -> gr.Blocks:
       --adpd-green: #70e06a;
       --adpd-purple: #bd7bff;
     }
+    html, body { height: 100%; margin: 0; }
     .gradio-container {
-      min-height: 100vh;
+      height: 100vh;
       max-width: 100% !important;
       padding: 0 !important;
       background:
@@ -247,9 +248,16 @@ def build_app() -> gr.Blocks:
       margin: 0;
       padding: 6px;
       gap: 6px;
+      height: 100vh;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
     }
-    /* Tighten Gradio's default vertical gaps so everything fits one screen. */
+    /* Flexbox fill: title fixed, row fills the rest; min-height:0 stops runaway growth. */
     #adpd-shell .gap { gap: 6px !important; }
+    #adpd-title { flex: 0 0 auto; }
+    #main-row { flex: 1 1 auto; min-height: 0; }
+    #chat-col, #adventure-col { min-height: 0; height: 100%; }
     #adpd-title {
       border: 2px solid var(--adpd-ink);
       border-radius: 6px;
@@ -276,14 +284,23 @@ def build_app() -> gr.Blocks:
       background: white;
       box-shadow: 4px 4px 0 var(--adpd-ink);
       padding: 8px;
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
     }
     #adventure-panel {
       background: var(--adpd-blue);
     }
-    #toy-chat { height: calc(100vh - 215px) !important; }
+    /* The chatbot fills the chat panel (toolbar + input stay fixed). */
+    #toy-chat { flex: 1 1 auto !important; min-height: 0 !important; }
+    /* The toy preview fills the rest of its panel under the label. */
+    #toy-view { flex: 1 1 auto; min-height: 0; display: flex; }
     .adventure-frame {
       width: 100%;
-      height: calc(100vh - 150px);
+      height: 100%;
+      flex: 1 1 auto;
       border: 2px solid var(--adpd-ink);
       border-radius: 6px;
       background: white;
@@ -306,19 +323,20 @@ def build_app() -> gr.Blocks:
     }
     #adventure-label h3 { margin: 0; }
     @media (max-width: 900px) {
-      .adventure-frame { height: 70vh !important; }
-      #toy-chat { height: calc(70vh - 120px) !important; }
+      /* On narrow screens let it grow & scroll rather than cram into one viewport. */
+      .gradio-container, #adpd-shell { height: auto; overflow: visible; }
+      #toy-view { min-height: 60vh; }
     }
     """
 
-    with gr.Blocks(title=APP_TITLE, fill_width=True) as demo:
+    with gr.Blocks(title=APP_TITLE, fill_width=True, fill_height=True) as demo:
         with gr.Column(elem_id="adpd-shell"):
             gr.Markdown(
                 "# Amazing Digital Pet Dentures\n"
                 "Describe anything — the dentures build it as a live HTML toy.",
                 elem_id="adpd-title",
             )
-            with gr.Row(equal_height=False):
+            with gr.Row(equal_height=True, elem_id="main-row"):
                 with gr.Column(scale=4, elem_id="chat-col"):
                     with gr.Group(elem_id="chat-panel"):
                         with gr.Row(elem_id="chat-toolbar"):
@@ -330,7 +348,6 @@ def build_app() -> gr.Blocks:
                             value=list(WELCOME_MESSAGE),
                             show_label=False,
                             elem_id="toy-chat",
-                            height="calc(100vh - 215px)",
                         )
                         with gr.Row(elem_id="chat-input-row"):
                             message = gr.Textbox(
@@ -351,7 +368,7 @@ def build_app() -> gr.Blocks:
                     with gr.Group(elem_id="adventure-panel"):
                         with gr.Row(elem_id="adventure-toolbar"):
                             gr.Markdown("### 🎪 Your toy", elem_id="adventure-label")
-                        adventure_view = gr.HTML(empty_preview())
+                        adventure_view = gr.HTML(empty_preview(), elem_id="toy-view")
 
             # Persisted in the browser's localStorage: the model-facing conversation (user
             # turns + assistant answers incl. the HTML, NOT the thinking). Survives reloads;
