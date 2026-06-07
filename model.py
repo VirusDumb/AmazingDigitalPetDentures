@@ -29,7 +29,11 @@ from llama_cpp import Llama
 # we download all matching shards and point llama.cpp at the first (it auto-loads the rest).
 MODEL_REPO = "unsloth/Nemotron-3-Nano-30B-A3B-GGUF"
 QUANT_GLOB = "*Q8_0*.gguf"
-N_CTX = 65536
+# Full trained context (n_ctx_train = 1,048,576). Nemotron-3-Nano is hybrid Mamba-2: only its
+# few attention layers grow KV with context (Mamba layers are constant-size), so long context
+# is cheap here. Q8_0 (~34 GB) leaves ~36 GB free on ZeroGPU's ~70 GB H200 for the KV cache.
+# (llama.cpp allocates KV up front from this — if it ever OOMs at load, dial this back.)
+N_CTX = 1048576
 
 # Unsloth's recommended Nemotron sampling.
 DEFAULTS = dict(temperature=0.6, top_p=0.95, min_p=0.01)
